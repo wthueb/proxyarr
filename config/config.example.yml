@@ -1,0 +1,34 @@
+# proxyarr configuration.
+#
+# Pass the path with --config <path>, the PROXYARR_CONFIG environment
+# variable, or place a config.yml in the working directory.
+
+server:
+  host: 0.0.0.0
+  port: 8484
+
+logging:
+  # trace | debug | information | warning | error | critical | none
+  level: information
+  # logfmt (default) | json
+  format: logfmt
+  # Emit logger scopes (e.g. ASP.NET Core request ids) as extra fields.
+  include_scopes: false
+  # Per-category minimum levels. Framework categories (Microsoft, System) default
+  # to warning and Yarp is disabled entirely because it logs full upstream URLs
+  # including query-string credentials; re-raise them here if you need to.
+  overrides: {}
+  #  Microsoft.AspNetCore: information
+
+clients:
+  - name: qbittorrent1
+    type: qbittorrent
+    upstream: http://localhost:8080
+
+  - name: qbittorrent2
+    type: qbittorrent
+    upstream: http://localhost:8081
+
+  - name: sabnzbd
+    type: sabnzbd
+    upstream: http://localhost:8085/sabnzbd

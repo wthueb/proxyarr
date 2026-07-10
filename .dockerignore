@@ -1,0 +1,11 @@
+**/bin/
+**/obj/
+**/TestResults/
+.git/
+.direnv/
+.envrc
+flake.nix
+flake.lock
+Dockerfile
+compose.yaml
+README.md

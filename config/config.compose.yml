@@ -1,0 +1,15 @@
+server:
+  host: 0.0.0.0
+  port: 8484
+
+logging:
+  level: debug
+
+clients:
+  - name: qbittorrent
+    type: qbittorrent
+    upstream: http://qbittorrent:8080
+
+  - name: sabnzbd
+    type: sabnzbd
+    upstream: http://sabnzbd:8080

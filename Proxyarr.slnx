@@ -1,0 +1,9 @@
+<Solution>
+  <Folder Name="/src/">
+    <Project Path="src/Proxyarr/Proxyarr.csproj" />
+  </Folder>
+  <Folder Name="/tests/">
+    <Project Path="tests/Proxyarr.IntegrationTests/Proxyarr.IntegrationTests.csproj" />
+    <Project Path="tests/Proxyarr.Tests/Proxyarr.Tests.csproj" />
+  </Folder>
+</Solution>

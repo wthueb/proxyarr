@@ -1,0 +1,24 @@
+# curl http://localhost:8484/qbittorrent/api/v2/app/version
+# curl "http://localhost:8484/sabnzbd/api?mode=version&output=json"
+services:
+  proxy:
+    build: .
+    volumes:
+      - ./config/config.compose.yml:/config/config.yml:ro
+    ports:
+      - 8484:8484
+    depends_on:
+      - qbittorrent
+      - sabnzbd
+
+  qbittorrent:
+    image: linuxserver/qbittorrent:5.2.3
+    environment:
+      - WEBUI_PORT=8080
+    ports:
+      - 8080:8080
+
+  sabnzbd:
+    image: linuxserver/sabnzbd:5.0.4
+    ports:
+      - 8085:8080
