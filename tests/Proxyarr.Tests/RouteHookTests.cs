@@ -114,9 +114,41 @@ public sealed class RouteHookTests : IDisposable
             _logs.Events,
             logEvent =>
                 logEvent.Level == LogLevel.Information
-                && logEvent.Message.StartsWith("Handled")
-                && logEvent.Message.Contains("short-circuited by the OnRequest hook")
+                && logEvent.Message == "Request handled by OnRequest hook"
         );
+    }
+
+    [Fact]
+    public async Task Logs_inside_route_handlers_inherit_the_request_scope()
+    {
+        var client = CreateClient(
+            new ProxyRoute(
+                "/scoped",
+                ["GET"],
+                Handle: (context, _) =>
+                {
+                    context
+                        .RequestServices.GetRequiredService<ILoggerFactory>()
+                        .CreateLogger("Nested.Service")
+                        .LogInformation("Nested request work");
+                    return Task.FromResult(Results.Ok());
+                }
+            )
+        );
+
+        await client.GetAsync(
+            "/stub/scoped?mode=test&apikey=secret",
+            TestContext.Current.CancellationToken
+        );
+
+        var nested = Assert.Single(
+            _logs.Events,
+            logEvent => logEvent.Message == "Nested request work"
+        );
+        Assert.Equal("stub", nested.Fields["Instance"]);
+        Assert.Equal("GET", nested.Fields["Method"]);
+        Assert.Equal("/stub/scoped", nested.Fields["Path"]);
+        Assert.Equal("?mode=test&apikey=REDACTED", nested.Fields["Query"]);
     }
 
     [Fact]
@@ -204,7 +236,8 @@ public sealed class RouteHookTests : IDisposable
         var outcome = Assert.Single(
             _logs.Events,
             logEvent =>
-                logEvent.Category == "Proxyarr.Requests" && logEvent.Message.StartsWith("Handled")
+                logEvent.Category == "Proxyarr.Requests"
+                && logEvent.Message == "Request handled locally"
         );
         Assert.Equal("stub", outcome.Fields["Instance"]);
         Assert.Equal(200, outcome.Fields["StatusCode"]);

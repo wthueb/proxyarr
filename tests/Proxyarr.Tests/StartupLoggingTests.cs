@@ -22,14 +22,13 @@ public sealed class StartupLoggingTests
         );
         using var client = factory.CreateClient();
 
-        var expectedVersion =
-            typeof(ConfigLoader).Assembly.GetCustomAttribute<AssemblyInformationalVersionAttribute>()!
-                .InformationalVersion;
+        var expectedVersion = typeof(ConfigLoader)
+            .Assembly.GetCustomAttribute<AssemblyInformationalVersionAttribute>()!
+            .InformationalVersion;
         var versionLog = Assert.Single(
             logs.Events,
             logEvent =>
-                logEvent.Level == LogLevel.Information
-                && logEvent.Message.StartsWith("Proxyarr version ")
+                logEvent.Level == LogLevel.Information && logEvent.Message == "Proxyarr started"
         );
 
         Assert.Equal("Proxyarr", versionLog.Category);

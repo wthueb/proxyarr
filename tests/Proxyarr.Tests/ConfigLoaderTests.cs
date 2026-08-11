@@ -389,7 +389,6 @@ public class ConfigLoaderTests
         Assert.Equal("logfmt", config.Logging.Format);
         Assert.False(config.Logging.UsesJson);
         Assert.Equal(Microsoft.Extensions.Logging.LogLevel.Information, config.Logging.ParsedLevel);
-        Assert.False(config.Logging.IncludeScopes);
         Assert.Empty(config.Logging.Overrides);
     }
 
@@ -401,7 +400,6 @@ public class ConfigLoaderTests
             logging:
               level: debug
               format: json
-              include_scopes: true
               overrides:
                 Microsoft.AspNetCore: warning
                 Yarp: error
@@ -411,11 +409,25 @@ public class ConfigLoaderTests
 
         Assert.True(config.Logging.UsesJson);
         Assert.Equal(Microsoft.Extensions.Logging.LogLevel.Debug, config.Logging.ParsedLevel);
-        Assert.True(config.Logging.IncludeScopes);
         Assert.Equal(
             Microsoft.Extensions.Logging.LogLevel.Warning,
             config.Logging.ParsedOverrides.Single(o => o.Key == "Microsoft.AspNetCore").Value
         );
+    }
+
+    [Fact]
+    public void Include_scopes_option_is_rejected_because_scopes_are_always_enabled()
+    {
+        var ex = Assert.Throws<ConfigurationException>(() =>
+            ConfigLoader.Parse(
+                """
+                logging:
+                  include_scopes: false
+                """
+            )
+        );
+
+        Assert.Contains("Failed to parse", ex.Message);
     }
 
     [Fact]

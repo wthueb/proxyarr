@@ -28,9 +28,6 @@ public sealed class LoggingConfig
     /// <summary>Output format: logfmt (default) or json.</summary>
     public string Format { get; set; } = LogfmtFormat;
 
-    /// <summary>Emit logger scopes (e.g. ASP.NET Core's request scope fields) as extra fields.</summary>
-    public bool IncludeScopes { get; set; }
-
     /// <summary>
     /// Per-category level overrides, e.g. <c>"Microsoft.AspNetCore": debug</c> to re-enable
     /// framework logs that the proxy dials down to warning by default.

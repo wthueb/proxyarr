@@ -1,5 +1,6 @@
 using Microsoft.EntityFrameworkCore;
 using Proxyarr.Dedupe.Db;
+using Proxyarr.Logging;
 
 namespace Proxyarr.Dedupe;
 
@@ -20,8 +21,8 @@ public sealed class ClaimStore(
         await using var db = await factory.CreateDbContextAsync(cancellationToken);
         await db.Database.MigrateAsync(cancellationToken);
         logger.LogInformation(
-            "SABnzbd dedup database ready at {DataSource}",
-            db.Database.GetDbConnection().DataSource
+            "SABnzbd dedup database ready",
+            ("DataSource", db.Database.GetDbConnection().DataSource)
         );
     }
 

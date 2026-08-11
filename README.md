@@ -70,7 +70,6 @@ server:
 logging:
   level: information # trace | debug | information | warning | error | critical | none
   format: logfmt # logfmt (default) | json
-  include_scopes: false
   overrides: {} # per-category levels, e.g. "Microsoft.AspNetCore: information"
 
 clients:
@@ -176,13 +175,14 @@ and only forwards the real delete (honoring `del_files`) once the **last** claim
 Both formats emit one event per line with identical snake_case fields; `logfmt` is the default:
 
 ```text
-ts=2026-07-09T06:03:48.824Z level=info msg="Proxied qbittorrent GET /qbittorrent/api/v2/torrents/info -> 200 in 3.1ms" logger=Proxyarr.Forwarding.UpstreamForwarder instance=qbittorrent method=GET path=/qbittorrent/api/v2/torrents/info query="" status_code=200 elapsed_ms=3.1
+ts=2026-07-09T06:03:48.824Z level=info msg="Request proxied" logger=Proxyarr.Forwarding.UpstreamForwarder instance=qbittorrent method=GET path=/qbittorrent/api/v2/torrents/info query="" status_code=200 elapsed_ms=3.1
 ```
 
 Every proxied request logs its outcome and duration at `information`; upstream failures log at
 `error` with the exception; rejected and unmatched requests log at `warning` (useful for spotting
-when Radarr starts calling an endpoint the adapter doesn't declare yet). Query strings are
-redacted before logging (`apikey=REDACTED`, ...), and YARP's own logging — which would print
+when Radarr starts calling an endpoint the adapter doesn't declare yet). Every log emitted while a
+request is active inherits its instance, method, path, and query fields. Query strings are redacted
+before entering that scope (`apikey=REDACTED`, ...), and YARP's own logging — which would print
 un-redacted upstream URLs — is disabled by default (re-enable with an override on `Yarp` if you
 accept that).
 

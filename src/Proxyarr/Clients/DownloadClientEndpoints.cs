@@ -137,11 +137,8 @@ public static class DownloadClientEndpoints
                 )
                 {
                     requestLogger.LogWarning(
-                        "No proxied endpoint matches {Method} {Path}{Query} (responding {StatusCode})",
-                        context.Request.Method,
-                        context.Request.Path.Value,
-                        QueryRedactor.Redact(context.Request),
-                        context.Response.StatusCode
+                        "No proxied endpoint matches request",
+                        ("StatusCode", context.Response.StatusCode)
                     );
                 }
             }
@@ -200,13 +197,7 @@ public static class DownloadClientEndpoints
                 {
                     if (route.Validate?.Invoke(context.Request) is { } rejection)
                     {
-                        requestLogger.LogWarning(
-                            "Rejected {Instance} {Method} {Path}{Query}: refused by the endpoint guard",
-                            instance.Name,
-                            context.Request.Method,
-                            context.Request.Path.Value,
-                            QueryRedactor.Redact(context.Request)
-                        );
+                        requestLogger.LogWarning("Request rejected by endpoint guard");
                         await rejection.ExecuteAsync(context);
                         return;
                     }
@@ -221,12 +212,8 @@ public static class DownloadClientEndpoints
                             // (e.g. a SABnzbd dedup hit answered locally without an upstream call).
                             await shortCircuit.ExecuteAsync(context);
                             requestLogger.LogInformation(
-                                "Handled {Instance} {Method} {Path}{Query} -> {StatusCode} (short-circuited by the OnRequest hook)",
-                                instance.Name,
-                                context.Request.Method,
-                                context.Request.Path.Value,
-                                QueryRedactor.Redact(context.Request),
-                                context.Response.StatusCode
+                                "Request handled by OnRequest hook",
+                                ("StatusCode", context.Response.StatusCode)
                             );
                             return;
                         }
@@ -243,11 +230,11 @@ public static class DownloadClientEndpoints
         }
 
         app.Logger.LogInformation(
-            "Proxying /{Name} ({Type}, {RouteCount} endpoints) -> {Upstream}",
-            instance.Name,
-            adapter.Type,
-            routes.Count,
-            instance.Upstream
+            "Client proxy configured",
+            ("Name", instance.Name),
+            ("Type", adapter.Type),
+            ("RouteCount", routes.Count),
+            ("Upstream", instance.Upstream)
         );
     }
 
@@ -273,13 +260,9 @@ public static class DownloadClientEndpoints
         var elapsedMs = Math.Round(Stopwatch.GetElapsedTime(startTimestamp).TotalMilliseconds, 1);
 
         requestLogger.LogInformation(
-            "Handled {Instance} {Method} {Path}{Query} -> {StatusCode} in {ElapsedMs}ms",
-            instance.Name,
-            context.Request.Method,
-            context.Request.Path.Value,
-            QueryRedactor.Redact(context.Request),
-            context.Response.StatusCode,
-            elapsedMs
+            "Request handled locally",
+            ("StatusCode", context.Response.StatusCode),
+            ("ElapsedMs", elapsedMs)
         );
     }
 }

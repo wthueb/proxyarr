@@ -57,7 +57,7 @@ public sealed class RequestLoggingTests : IDisposable
         var completion = Assert.Single(
             _logs.Events,
             logEvent =>
-                logEvent.Level == LogLevel.Information && logEvent.Message.StartsWith("Proxied")
+                logEvent.Level == LogLevel.Information && logEvent.Message == "Request proxied"
         );
         Assert.Equal("Proxyarr.Forwarding.UpstreamForwarder", completion.Category);
         Assert.Equal("qbit", completion.Fields["Instance"]);
@@ -100,7 +100,7 @@ public sealed class RequestLoggingTests : IDisposable
             _logs.Events,
             logEvent =>
                 logEvent.Level == LogLevel.Warning
-                && logEvent.Message.StartsWith("No proxied endpoint matches")
+                && logEvent.Message == "No proxied endpoint matches request"
         );
         Assert.Equal("Proxyarr.Requests", warning.Category);
         Assert.Equal("/qbit/api/v2/sync/maindata", warning.Fields["Path"]);
@@ -117,8 +117,32 @@ public sealed class RequestLoggingTests : IDisposable
         var warning = Assert.Single(
             _logs.Events,
             logEvent =>
-                logEvent.Level == LogLevel.Warning && logEvent.Message.StartsWith("Rejected")
+                logEvent.Level == LogLevel.Warning
+                && logEvent.Message == "Request rejected by endpoint guard"
         );
         Assert.Equal("sab", warning.Fields["Instance"]);
+    }
+
+    [Fact]
+    public async Task Concurrent_requests_keep_their_scopes_isolated()
+    {
+        await Task.WhenAll(
+            _client.GetAsync("/qbit/api/v2/app/version", TestContext.Current.CancellationToken),
+            _client.GetAsync("/sab/api?mode=version", TestContext.Current.CancellationToken)
+        );
+
+        var completions = _logs.Events.Where(logEvent => logEvent.Message == "Request proxied");
+        Assert.Contains(
+            completions,
+            logEvent =>
+                Equals(logEvent.Fields["Instance"], "qbit")
+                && Equals(logEvent.Fields["Path"], "/qbit/api/v2/app/version")
+        );
+        Assert.Contains(
+            completions,
+            logEvent =>
+                Equals(logEvent.Fields["Instance"], "sab")
+                && Equals(logEvent.Fields["Path"], "/sab/api")
+        );
     }
 }

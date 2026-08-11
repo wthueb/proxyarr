@@ -6,6 +6,7 @@ using Proxyarr.Configuration;
 using Proxyarr.Dedupe;
 using Proxyarr.Dedupe.Db;
 using Proxyarr.Forwarding;
+using Proxyarr.Logging;
 
 namespace Proxyarr.Clients.Sabnzbd;
 
@@ -98,11 +99,7 @@ public sealed class SabnzbdDedupe(
             if (await api.JobIsLiveAsync(existing.NzoId, ct))
             {
                 await store.AddClaimAsync(existing.Id, instance.Name, category, ct);
-                logger.LogInformation(
-                    "Dedup addfile hit for {Instance}: claimed existing job {NzoId}",
-                    instance.Name,
-                    existing.NzoId
-                );
+                logger.LogInformation("SABnzbd add deduplicated", ("NzoId", existing.NzoId));
                 return SyntheticNzoIds([existing.NzoId]);
             }
 
@@ -145,10 +142,7 @@ public sealed class SabnzbdDedupe(
 
         if (value.Equals("all", StringComparison.OrdinalIgnoreCase))
         {
-            logger.LogWarning(
-                "Delete value=all for {Instance} forwarded unchanged (dedup bypassed)",
-                instance.Name
-            );
+            logger.LogWarning("SABnzbd delete-all bypassed deduplication");
             var (status, body) = await api.SendAsync(
                 HttpMethod.Get,
                 BuildForwardQuery(context.Request.Query, ("output", "json")),
@@ -180,10 +174,9 @@ public sealed class SabnzbdDedupe(
             else
             {
                 logger.LogInformation(
-                    "Delete for {Instance}: released claim on {NzoId}, {Remaining} claim(s) remain",
-                    instance.Name,
-                    nzoId,
-                    remaining
+                    "SABnzbd claim released",
+                    ("NzoId", nzoId),
+                    ("Remaining", remaining)
                 );
             }
         }
@@ -199,9 +192,8 @@ public sealed class SabnzbdDedupe(
             );
             await api.SendAsync(HttpMethod.Get, query, null, ct);
             logger.LogInformation(
-                "Delete for {Instance}: last claim removed, deleted {NzoIds} upstream",
-                instance.Name,
-                string.Join(',', toDelete)
+                "SABnzbd jobs deleted upstream",
+                ("NzoIds", string.Join(',', toDelete))
             );
         }
 

@@ -36,7 +36,9 @@ public sealed class JsonLogFormatter : ConsoleFormatter, IDisposable
         TextWriter textWriter
     )
     {
-        var message = logEntry.Formatter(logEntry.State, logEntry.Exception);
+        var message =
+            LogFields.OriginalFormat(logEntry.State)
+            ?? logEntry.Formatter(logEntry.State, logEntry.Exception);
         if (string.IsNullOrEmpty(message) && logEntry.Exception is null)
         {
             return;
@@ -51,15 +53,12 @@ public sealed class JsonLogFormatter : ConsoleFormatter, IDisposable
             json.WriteString("msg", message);
             json.WriteString("logger", logEntry.Category);
 
-            if (_options.IncludeScopes && scopeProvider is not null)
+            foreach (
+                var (key, value) in LogFields.CollectOutputFields(scopeProvider, logEntry.State)
+            )
             {
-                scopeProvider.ForEachScope(
-                    (scope, writer) => WriteStateFields(writer, scope),
-                    json
-                );
+                WriteField(json, key, value);
             }
-
-            WriteStateFields(json, logEntry.State);
 
             if (logEntry.Exception is not null)
             {
@@ -85,51 +84,34 @@ public sealed class JsonLogFormatter : ConsoleFormatter, IDisposable
         return now.ToString(format, CultureInfo.InvariantCulture);
     }
 
-    private static void WriteStateFields(Utf8JsonWriter json, object? state)
+    private static void WriteField(Utf8JsonWriter json, string name, object? value)
     {
-        if (state is not IEnumerable<KeyValuePair<string, object?>> fields)
+        switch (value)
         {
-            return;
-        }
-
-        foreach (var (key, value) in fields)
-        {
-            if (key == LogFields.OriginalFormatKey)
-            {
-                continue;
-            }
-
-            var name = LogFields.NormalizeKey(key);
-            switch (value)
-            {
-                case null:
-                    json.WriteNull(name);
-                    break;
-                case bool boolean:
-                    json.WriteBoolean(name, boolean);
-                    break;
-                case byte or sbyte or short or ushort or int or uint or long:
-                    json.WriteNumber(name, Convert.ToInt64(value, CultureInfo.InvariantCulture));
-                    break;
-                case ulong unsigned:
-                    json.WriteNumber(name, unsigned);
-                    break;
-                case float single:
-                    json.WriteNumber(name, single);
-                    break;
-                case double floating:
-                    json.WriteNumber(name, floating);
-                    break;
-                case decimal number:
-                    json.WriteNumber(name, number);
-                    break;
-                default:
-                    json.WriteString(
-                        name,
-                        Convert.ToString(value, CultureInfo.InvariantCulture) ?? ""
-                    );
-                    break;
-            }
+            case null:
+                json.WriteNull(name);
+                break;
+            case bool boolean:
+                json.WriteBoolean(name, boolean);
+                break;
+            case byte or sbyte or short or ushort or int or uint or long:
+                json.WriteNumber(name, Convert.ToInt64(value, CultureInfo.InvariantCulture));
+                break;
+            case ulong unsigned:
+                json.WriteNumber(name, unsigned);
+                break;
+            case float single:
+                json.WriteNumber(name, single);
+                break;
+            case double floating:
+                json.WriteNumber(name, floating);
+                break;
+            case decimal number:
+                json.WriteNumber(name, number);
+                break;
+            default:
+                json.WriteString(name, Convert.ToString(value, CultureInfo.InvariantCulture) ?? "");
+                break;
         }
     }
 }

@@ -17,8 +17,6 @@ logging:
   level: information
   # logfmt (default) | json
   format: logfmt
-  # Emit logger scopes (e.g. ASP.NET Core request ids) as extra fields.
-  include_scopes: false
   # Per-category minimum levels. Framework categories (Microsoft, System) default
   # to warning and Yarp is disabled entirely because it logs full upstream URLs
   # including query-string credentials; re-raise them here if you need to.

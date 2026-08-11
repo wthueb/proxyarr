@@ -50,19 +50,22 @@ builder.Services.AddDownloadClients();
 
 var app = builder.Build();
 
+app.UseRequestLogScope(config);
+
 var version =
-    typeof(Program).Assembly.GetCustomAttribute<AssemblyInformationalVersionAttribute>()
+    typeof(Program)
+        .Assembly.GetCustomAttribute<AssemblyInformationalVersionAttribute>()
         ?.InformationalVersion
     ?? typeof(Program).Assembly.GetName().Version?.ToString()
     ?? "unknown";
-app.Logger.LogInformation("Proxyarr version {Version}", version);
+app.Logger.LogInformation("Proxyarr started", ("Version", version));
 
 app.Logger.LogInformation(
-    "Loaded configuration from {ConfigPath} ({ClientCount} clients, {LogFormat} logs at {LogLevel})",
-    Path.GetFullPath(configPath),
-    config.Clients.Count,
-    config.Logging.UsesJson ? "json" : "logfmt",
-    LogFields.LevelToken(config.Logging.ParsedLevel)
+    "Configuration loaded",
+    ("ConfigPath", Path.GetFullPath(configPath)),
+    ("ClientCount", config.Clients.Count),
+    ("LogFormat", config.Logging.UsesJson ? "json" : "logfmt"),
+    ("LogLevel", LogFields.LevelToken(config.Logging.ParsedLevel))
 );
 
 app.MapGet("/healthz", () => Results.Text("OK"));
@@ -73,5 +76,5 @@ app.Run();
 void ConfigureFormatter(ConsoleFormatterOptions options)
 {
     options.UseUtcTimestamp = true;
-    options.IncludeScopes = config.Logging.IncludeScopes;
+    options.IncludeScopes = true;
 }

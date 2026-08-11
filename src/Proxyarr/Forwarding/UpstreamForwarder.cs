@@ -49,18 +49,7 @@ public sealed class UpstreamForwarder(IHttpForwarder forwarder, ILogger<Upstream
     {
         context.Items[ForwardedItemKey] = true;
 
-        var method = context.Request.Method;
-        var path = context.Request.Path.Value;
-        var query = QueryRedactor.Redact(context.Request);
-
-        logger.LogDebug(
-            "Forwarding {Instance} {Method} {Path}{Query} to {Upstream}",
-            instance.Name,
-            method,
-            path,
-            query,
-            instance.Upstream
-        );
+        logger.LogDebug("Forwarding request", ("Upstream", instance.Upstream));
 
         var startTimestamp = Stopwatch.GetTimestamp();
         var error = await forwarder.SendAsync(
@@ -75,13 +64,9 @@ public sealed class UpstreamForwarder(IHttpForwarder forwarder, ILogger<Upstream
         if (error == ForwarderError.None)
         {
             logger.LogInformation(
-                "Proxied {Instance} {Method} {Path}{Query} -> {StatusCode} in {ElapsedMs}ms",
-                instance.Name,
-                method,
-                path,
-                query,
-                context.Response.StatusCode,
-                elapsedMs
+                "Request proxied",
+                ("StatusCode", context.Response.StatusCode),
+                ("ElapsedMs", elapsedMs)
             );
         }
         else
@@ -89,14 +74,10 @@ public sealed class UpstreamForwarder(IHttpForwarder forwarder, ILogger<Upstream
             var exception = context.Features.Get<IForwarderErrorFeature>()?.Exception;
             logger.LogError(
                 exception,
-                "Failed to proxy {Instance} {Method} {Path}{Query} to {Upstream} after {ElapsedMs}ms: {Error}",
-                instance.Name,
-                method,
-                path,
-                query,
-                instance.Upstream,
-                elapsedMs,
-                error
+                "Request proxy failed",
+                ("Upstream", instance.Upstream),
+                ("ElapsedMs", elapsedMs),
+                ("Error", error)
             );
         }
     }

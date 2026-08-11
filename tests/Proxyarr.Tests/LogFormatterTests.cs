@@ -14,7 +14,8 @@ public class LogfmtFormatterTests
         string category = "Test.Category",
         string message = "hello",
         IReadOnlyList<KeyValuePair<string, object?>>? state = null,
-        Exception? exception = null
+        Exception? exception = null,
+        IExternalScopeProvider? scopeProvider = null
     )
     {
         using var formatter = new LogfmtFormatter(
@@ -29,7 +30,7 @@ public class LogfmtFormatterTests
             exception,
             (_, _) => message
         );
-        formatter.Write(in entry, scopeProvider: null, writer);
+        formatter.Write(in entry, scopeProvider, writer);
         return writer.ToString();
     }
 
@@ -49,10 +50,7 @@ public class LogfmtFormatterTests
 
         Assert.StartsWith("ts=", line);
         Assert.Contains(" level=info ", line);
-        Assert.Contains(
-            "msg=\"Proxied qbit GET /qbit/api/v2/torrents/info -> 200 in 3.1ms\"",
-            line
-        );
+        Assert.Contains("msg=\"Proxied {Instance} ... {StatusCode} ... {ElapsedMs}\"", line);
         Assert.Contains(" logger=Test.Category ", line);
         Assert.Contains(" instance=qbit ", line);
         Assert.Contains(" status_code=200 ", line);
@@ -86,6 +84,28 @@ public class LogfmtFormatterTests
         Assert.Contains("exception=\"System.InvalidOperationException: boom", line);
     }
 
+    [Fact]
+    public void Scoped_fields_are_emitted_once_and_popped_on_dispose()
+    {
+        var scopes = new LoggerExternalScopeProvider();
+        string scopedLine;
+        using (
+            scopes.Push(
+                new Dictionary<string, object?> { ["Instance"] = "qbit", ["Shared"] = "scope" }
+            )
+        )
+        {
+            scopedLine = Format(state: [new("Shared", "event")], scopeProvider: scopes);
+        }
+
+        var unscopedLine = Format(scopeProvider: scopes);
+
+        Assert.Contains(" instance=qbit ", scopedLine);
+        Assert.Contains(" shared=event", scopedLine);
+        Assert.Equal(1, scopedLine.Split(" shared=", StringSplitOptions.None).Length - 1);
+        Assert.DoesNotContain(" instance=", unscopedLine);
+    }
+
     [Theory]
     [InlineData(LogLevel.Trace, "trace")]
     [InlineData(LogLevel.Debug, "debug")]
@@ -104,7 +124,8 @@ public class JsonLogFormatterTests
     private static JsonDocument Format(
         string message = "hello",
         IReadOnlyList<KeyValuePair<string, object?>>? state = null,
-        Exception? exception = null
+        Exception? exception = null,
+        IExternalScopeProvider? scopeProvider = null
     )
     {
         using var formatter = new JsonLogFormatter(
@@ -119,7 +140,7 @@ public class JsonLogFormatterTests
             exception,
             (_, _) => message
         );
-        formatter.Write(in entry, scopeProvider: null, writer);
+        formatter.Write(in entry, scopeProvider, writer);
         return JsonDocument.Parse(writer.ToString());
     }
 
@@ -133,14 +154,14 @@ public class JsonLogFormatterTests
                 new("Instance", "sab"),
                 new("StatusCode", 502),
                 new("ElapsedMs", 15.4),
-                new("{OriginalFormat}", "irrelevant"),
+                new("{OriginalFormat}", "Something happened"),
             ]
         );
 
         var root = log.RootElement;
         Assert.True(DateTimeOffset.TryParse(root.GetProperty("ts").GetString(), out _));
         Assert.Equal("warn", root.GetProperty("level").GetString());
-        Assert.Equal("something happened", root.GetProperty("msg").GetString());
+        Assert.Equal("Something happened", root.GetProperty("msg").GetString());
         Assert.Equal("Test.Category", root.GetProperty("logger").GetString());
         Assert.Equal("sab", root.GetProperty("instance").GetString());
         Assert.Equal(502, root.GetProperty("status_code").GetInt32());
@@ -158,10 +179,36 @@ public class JsonLogFormatterTests
             log.RootElement.GetProperty("exception").GetString()
         );
     }
+
+    [Fact]
+    public void Scoped_fields_preserve_types_and_event_values_take_precedence()
+    {
+        var scopes = new LoggerExternalScopeProvider();
+        using var scope = scopes.Push(
+            new Dictionary<string, object?> { ["Instance"] = "sab", ["Attempt"] = 1 }
+        );
+        using var log = Format(state: [new("Attempt", 2)], scopeProvider: scopes);
+
+        Assert.Equal("sab", log.RootElement.GetProperty("instance").GetString());
+        Assert.Equal(2, log.RootElement.GetProperty("attempt").GetInt32());
+        Assert.Single(log.RootElement.EnumerateObject(), property => property.Name == "attempt");
+    }
 }
 
 public class LogFieldsTests
 {
+    [Fact]
+    public void Reads_the_static_message_from_structured_state()
+    {
+        var state = new Dictionary<string, object?>
+        {
+            ["Path"] = "/private/path",
+            [LogFields.OriginalFormatKey] = "Request received at {Path}",
+        };
+
+        Assert.Equal("Request received at {Path}", LogFields.OriginalFormat(state));
+    }
+
     [Theory]
     [InlineData("StatusCode", "status_code")]
     [InlineData("ElapsedMs", "elapsed_ms")]

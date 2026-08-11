@@ -5,6 +5,7 @@ using System.Text.Json.Nodes;
 using Proxyarr.Configuration;
 using Proxyarr.Dedupe;
 using Proxyarr.Forwarding;
+using Proxyarr.Logging;
 
 namespace Proxyarr.Clients.QBittorrent;
 
@@ -59,10 +60,7 @@ public sealed class QBittorrentDedupe(
             // rewritten form (category/tags translated) and relay the upstream result.
             if (anyUnparseable)
             {
-                logger.LogWarning(
-                    "Add for {Instance} carried no derivable info-hash; forwarding with tag/category rewrite only",
-                    instance.Name
-                );
+                logger.LogWarning("qBittorrent add has no derivable info hash");
             }
 
             var (status, body) = await api.AddTorrentAsync(
@@ -89,9 +87,8 @@ public sealed class QBittorrentDedupe(
             await api.AddTagsAsync(hashes, [instance.Name], ct);
             await RaiseShareLimitsAsync(api, existing, requestedLimits, ct);
             logger.LogInformation(
-                "Dedup add hit for {Instance}: tagged existing torrent(s) {Hashes}",
-                instance.Name,
-                string.Join(',', hashes)
+                "qBittorrent add deduplicated",
+                ("Hashes", string.Join(',', hashes))
             );
             return OkResult;
         }
@@ -291,10 +288,7 @@ public sealed class QBittorrentDedupe(
 
         if (hashesRaw.Equals("all", StringComparison.OrdinalIgnoreCase))
         {
-            logger.LogWarning(
-                "Delete hashes=all for {Instance} forwarded unchanged (dedup bypassed)",
-                instance.Name
-            );
+            logger.LogWarning("qBittorrent delete-all bypassed deduplication");
             await api.DeleteAsync(["all"], deleteFiles, ct);
             return OkResult;
         }
@@ -333,10 +327,9 @@ public sealed class QBittorrentDedupe(
         if (remaining.Count > 0)
         {
             logger.LogInformation(
-                "Delete for {Instance}: removed tag from {Hash}; still held by {Others}",
-                instance.Name,
-                hash,
-                string.Join(',', remaining)
+                "qBittorrent tag removed",
+                ("Hash", hash),
+                ("Others", string.Join(',', remaining))
             );
             return;
         }
@@ -350,11 +343,7 @@ public sealed class QBittorrentDedupe(
         if (torrent.ShareLimits.IsSurpassed(torrent.Ratio, torrent.SeedingTime, global))
         {
             await api.DeleteAsync([hash], deleteFiles: true, ct);
-            logger.LogInformation(
-                "Delete for {Instance}: last tag removed from {Hash}, seed limit already met — removed with files",
-                instance.Name,
-                hash
-            );
+            logger.LogInformation("qBittorrent torrent deleted", ("Hash", hash));
         }
         else
         {
@@ -364,11 +353,7 @@ public sealed class QBittorrentDedupe(
                 ShareLimitAction.RemoveWithContent,
                 ct
             );
-            logger.LogInformation(
-                "Delete for {Instance}: last tag removed from {Hash}, not yet at seed limit — qBittorrent will remove with files when it is",
-                instance.Name,
-                hash
-            );
+            logger.LogInformation("qBittorrent torrent scheduled for deletion", ("Hash", hash));
         }
     }
 
@@ -451,12 +436,7 @@ public sealed class QBittorrentDedupe(
         }
         catch (QBittorrentUpstreamException ex)
         {
-            logger.LogError(
-                ex,
-                "Dedup {Operation} failed for {Instance}",
-                operation,
-                instance.Name
-            );
+            logger.LogError(ex, "qBittorrent dedup operation failed", ("Operation", operation));
             return Results.StatusCode(StatusCodes.Status502BadGateway);
         }
     }

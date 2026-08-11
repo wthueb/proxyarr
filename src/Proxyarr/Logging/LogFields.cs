@@ -7,8 +7,61 @@ namespace Proxyarr.Logging;
 /// </summary>
 public static class LogFields
 {
-    /// <summary>The message-template placeholder key that duplicates the formatted message.</summary>
+    /// <summary>The structured-state key containing the fixed, unrendered message template.</summary>
     public const string OriginalFormatKey = "{OriginalFormat}";
+
+    /// <summary>
+    /// Returns the fixed message template carried by standard <see cref="ILogger"/> state. This
+    /// keeps values out of <c>msg</c> even for framework and dependency logs that use templates.
+    /// </summary>
+    public static string? OriginalFormat(object? state)
+    {
+        if (state is not IEnumerable<KeyValuePair<string, object?>> fields)
+        {
+            return null;
+        }
+
+        foreach (var (key, value) in fields)
+        {
+            if (key == OriginalFormatKey)
+            {
+                return value as string;
+            }
+        }
+
+        return null;
+    }
+
+    /// <summary>
+    /// Flattens ambient scopes and event-local state into output field names. Inner scopes replace
+    /// outer scopes, and event-local values replace scoped values.
+    /// </summary>
+    public static IReadOnlyDictionary<string, object?> CollectOutputFields(
+        IExternalScopeProvider? scopeProvider,
+        object? state
+    )
+    {
+        var output = new Dictionary<string, object?>(StringComparer.Ordinal);
+        scopeProvider?.ForEachScope(static (scope, fields) => MergeState(fields, scope), output);
+        MergeState(output, state);
+        return output;
+    }
+
+    private static void MergeState(Dictionary<string, object?> output, object? state)
+    {
+        if (state is not IEnumerable<KeyValuePair<string, object?>> fields)
+        {
+            return;
+        }
+
+        foreach (var (key, value) in fields)
+        {
+            if (key != OriginalFormatKey)
+            {
+                output[NormalizeKey(key)] = value;
+            }
+        }
+    }
 
     public static string LevelToken(LogLevel level) =>
         level switch

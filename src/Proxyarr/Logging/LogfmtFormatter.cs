@@ -7,8 +7,8 @@ namespace Proxyarr.Logging;
 
 /// <summary>
 /// Emits one logfmt line per event:
-/// <c>ts=2026-07-09T12:00:00.000Z level=info msg="Proxied ..." logger=... instance=qbit status_code=200</c>.
-/// Structured state values (message template arguments) become snake_case key=value pairs.
+/// <c>ts=2026-07-09T12:00:00.000Z level=info msg="Request proxied" logger=... instance=qbit status_code=200</c>.
+/// Structured state values become snake_case key=value pairs.
 /// </summary>
 public sealed class LogfmtFormatter : ConsoleFormatter, IDisposable
 {
@@ -32,7 +32,9 @@ public sealed class LogfmtFormatter : ConsoleFormatter, IDisposable
         TextWriter textWriter
     )
     {
-        var message = logEntry.Formatter(logEntry.State, logEntry.Exception);
+        var message =
+            LogFields.OriginalFormat(logEntry.State)
+            ?? logEntry.Formatter(logEntry.State, logEntry.Exception);
         if (string.IsNullOrEmpty(message) && logEntry.Exception is null)
         {
             return;
@@ -45,15 +47,10 @@ public sealed class LogfmtFormatter : ConsoleFormatter, IDisposable
         WritePair(textWriter, "msg", message);
         WritePair(textWriter, "logger", logEntry.Category);
 
-        if (_options.IncludeScopes && scopeProvider is not null)
+        foreach (var (key, value) in LogFields.CollectOutputFields(scopeProvider, logEntry.State))
         {
-            scopeProvider.ForEachScope(
-                (scope, writer) => WriteStateFields(writer, scope),
-                textWriter
-            );
+            WritePair(textWriter, key, Convert.ToString(value, CultureInfo.InvariantCulture) ?? "");
         }
-
-        WriteStateFields(textWriter, logEntry.State);
 
         if (logEntry.Exception is not null)
         {
@@ -74,28 +71,6 @@ public sealed class LogfmtFormatter : ConsoleFormatter, IDisposable
                     : "yyyy-MM-dd'T'HH:mm:ss.fffzzz"
             );
         return now.ToString(format, CultureInfo.InvariantCulture);
-    }
-
-    private static void WriteStateFields(TextWriter writer, object? state)
-    {
-        if (state is not IEnumerable<KeyValuePair<string, object?>> fields)
-        {
-            return;
-        }
-
-        foreach (var (key, value) in fields)
-        {
-            if (key == LogFields.OriginalFormatKey)
-            {
-                continue;
-            }
-
-            WritePair(
-                writer,
-                LogFields.NormalizeKey(key),
-                Convert.ToString(value, CultureInfo.InvariantCulture) ?? ""
-            );
-        }
     }
 
     private static void WritePair(TextWriter writer, string key, string value)
