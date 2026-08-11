@@ -1,3 +1,4 @@
+using System.Reflection;
 using Microsoft.Extensions.Logging.Console;
 using Proxyarr.Clients;
 using Proxyarr.Configuration;
@@ -48,6 +49,13 @@ builder.Services.AddSingleton(config);
 builder.Services.AddDownloadClients();
 
 var app = builder.Build();
+
+var version =
+    typeof(Program).Assembly.GetCustomAttribute<AssemblyInformationalVersionAttribute>()
+        ?.InformationalVersion
+    ?? typeof(Program).Assembly.GetName().Version?.ToString()
+    ?? "unknown";
+app.Logger.LogInformation("Proxyarr version {Version}", version);
 
 app.Logger.LogInformation(
     "Loaded configuration from {ConfigPath} ({ClientCount} clients, {LogFormat} logs at {LogLevel})",
