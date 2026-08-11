@@ -25,6 +25,8 @@ COPY --from=publish /app .
 ENV ASPNETCORE_HTTP_PORTS=""
 ENV PROXYARR_CONFIG=/config/config.yml
 EXPOSE 8484
+HEALTHCHECK --interval=30s --timeout=5s --start-period=5s --retries=3 \
+    CMD ["wget", "--spider", "--quiet", "http://127.0.0.1:8484/healthz"]
 USER $APP_UID
 
 ENTRYPOINT ["dotnet", "Proxyarr.dll"]
