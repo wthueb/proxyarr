@@ -43,6 +43,7 @@ public static class DownloadClientEndpoints
                 }
             );
         services.AddSingleton<QBittorrentApiClientFactory>();
+        services.AddSingleton<QBittorrentPathRewriter>();
         services.AddSingleton<QBittorrentDedupe>();
 
         // SABnzbd dedup: SQLite-backed claim store (context per operation via the factory) plus the
@@ -71,6 +72,7 @@ public static class DownloadClientEndpoints
                 }
             );
         services.AddSingleton<SabnzbdApiClientFactory>();
+        services.AddSingleton<SabnzbdPathRewriter>();
         services.AddSingleton<SabnzbdDedupe>();
 
         services.AddSingleton<IDownloadClientAdapter, QBittorrentAdapter>();

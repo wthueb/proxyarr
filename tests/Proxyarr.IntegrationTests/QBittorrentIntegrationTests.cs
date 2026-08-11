@@ -27,6 +27,9 @@ public sealed class QBittorrentIntegrationTests
                 upstreams:
                   - name: main
                     url: {qbittorrent.UpstreamUrl}
+                    path_mappings:
+                      - from: /config
+                        to: /proxyarr/qbit-config
                 instances:
                   - name: qbit
                     upstream: main
@@ -89,7 +92,8 @@ public sealed class QBittorrentIntegrationTests
         );
 
         using var preferences = JsonDocument.Parse(json);
-        Assert.True(preferences.RootElement.TryGetProperty("save_path", out _));
+        Assert.True(preferences.RootElement.TryGetProperty("save_path", out var savePath));
+        Assert.StartsWith("/proxyarr/qbit-config/", savePath.GetString());
     }
 
     [Fact]

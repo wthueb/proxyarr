@@ -38,6 +38,9 @@ public sealed class SabnzbdIntegrationTests : IClassFixture<SabnzbdContainerFixt
                 upstreams:
                   - name: main
                     url: {sabnzbd.UpstreamUrl}
+                    path_mappings:
+                      - from: /config
+                        to: /proxyarr/sab-config
                 instances:
                   - name: sab
                     upstream: main
@@ -78,7 +81,15 @@ public sealed class SabnzbdIntegrationTests : IClassFixture<SabnzbdContainerFixt
     {
         using var status = await GetJsonAsync($"mode=fullstatus&skip_dashboard=1&apikey={ApiKey}");
 
-        Assert.True(status.RootElement.GetProperty("status").TryGetProperty("uptime", out _));
+        var details = status.RootElement.GetProperty("status");
+        Assert.True(details.TryGetProperty("uptime", out _));
+
+        var completeDir =
+            details.TryGetProperty("complete_dir", out var underscored) ? underscored.GetString()
+            : details.TryGetProperty("completedir", out var compact) ? compact.GetString()
+            : null;
+        Assert.NotNull(completeDir);
+        Assert.StartsWith("/proxyarr/sab-config/", completeDir);
     }
 
     [Fact]

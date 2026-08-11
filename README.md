@@ -30,7 +30,8 @@ Each client type has an *adapter* that declares an explicit allow-list of endpoi
 the request), unknown SABnzbd `mode`s return 400, and destructive/administrative endpoints
 (`app/setPreferences`, `mode=shutdown`, ...) are never forwarded. Requests, headers, cookies
 (qBittorrent's `SID` session), bodies (including `.torrent`/`.nzb` uploads), and responses stream
-through unmodified via [YARP](https://microsoft.github.io/reverse-proxy/)'s forwarder.
+through via [YARP](https://microsoft.github.io/reverse-proxy/)'s forwarder. Responses are unchanged
+unless deduplication or an upstream `path_mappings` entry explicitly transforms them.
 
 ### Proxied endpoints
 
@@ -77,6 +78,9 @@ clients:
     upstreams:
       - name: main
         url: http://localhost:8080
+        path_mappings: # optional: real client paths -> synthetic reported paths
+          - from: /downloads
+            to: /proxyarr/qbit-main
     instances:
       - name: radarr # served at /qbittorrent/radarr
         upstream: main
@@ -100,6 +104,59 @@ Referencing a group enables dedupe; omitting `group` makes an instance a pass-th
 unique within their section and client type, so `radarr` can be used under both `qbittorrent` and
 `sabnzbd`. Unknown keys, invalid references, duplicate names, and malformed URLs fail at startup.
 
+### Reported path mappings
+
+Radarr and Sonarr select remote path mappings using only the download client's **Host**. They do
+not include its port, URL Base, type, or Proxyarr instance name. Consequently, two real clients
+behind one Proxyarr host are ambiguous when both report `/downloads/Movie` but the files live at
+different locations.
+
+Configure `path_mappings` on each named upstream to give its returned paths a unique synthetic
+namespace:
+
+```yaml
+clients:
+  qbittorrent:
+    upstreams:
+      - name: seedbox-a
+        url: http://qbit-a:8080
+        path_mappings:
+          - from: /downloads
+            to: /proxyarr/qbit-a
+    instances:
+      - name: radarr-a
+        upstream: seedbox-a
+
+  sabnzbd:
+    upstreams:
+      - name: seedbox-b
+        url: http://sab-b:8080
+        path_mappings:
+          - from: /downloads
+            to: /proxyarr/sab-b
+    instances:
+      - name: radarr-b
+        upstream: seedbox-b
+```
+
+Then add non-conflicting remote path mappings in each *arr:
+
+| Host | Remote Path | Local Path |
+| --- | --- | --- |
+| `proxy` | `/proxyarr/qbit-a` | `/mnt/seedbox-a/qbit` |
+| `proxy` | `/proxyarr/sab-b` | `/mnt/seedbox-b/sab` |
+
+`from` and `to` must be absolute paths. Rewrites match complete path segments, preserve the suffix,
+and use the longest matching `from` prefix, so a specific mapping may override a broader one.
+Windows drive/UNC paths and Unix paths are supported, including separator conversion when `from`
+and `to` use different styles. Every Proxyarr instance referencing the upstream inherits its
+mappings, and rewriting works with or without deduplication.
+
+Proxyarr rewrites the qBittorrent paths used by *arr in preferences, torrent info/properties, and
+categories. For SABnzbd it rewrites the complete directory from config/full status, absolute
+category directories, and queue/history `storage` paths. This only changes API responses; it does
+not mount or copy files, so each *arr must still be able to access every configured local path.
+
 ## Cross-instance deduplication
 
 Several Radarr/Sonarr instances often share one qBittorrent and one SABnzbd. When two of them
@@ -107,7 +164,8 @@ grab the same release, qBittorrent's one-category-per-torrent model means whiche
 "owns" the torrent and the other's download vanishes, and SABnzbd downloads the same NZB twice.
 
 Assign instances to a named group and proxyarr makes those instances **share one download**.
-Deduplication is opt-in: an instance without `group` is a byte-identical pass-through.
+Deduplication is opt-in: an instance without `group` is a byte-identical pass-through unless its
+upstream explicitly configures `path_mappings`.
 
 ```yaml
 database: /config/proxyarr.db # optional; defaults to proxyarr.db next to the config

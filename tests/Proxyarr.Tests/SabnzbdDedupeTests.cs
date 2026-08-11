@@ -35,6 +35,9 @@ public sealed class SabnzbdDedupeTests : IDisposable
                 upstreams:
                   - name: main
                     url: {_upstream.Url}
+                    path_mappings:
+                      - from: /downloads
+                        to: /proxyarr/sab
                 groups:
                   - name: shared
                     category: proxyarr
@@ -123,13 +126,25 @@ public sealed class SabnzbdDedupeTests : IDisposable
         _upstream
             .Given(Request.Create().WithPath("/api").WithParam("mode", "history").UsingGet())
             .RespondWith(
-                Json("""{"history":{"slots":[{"nzo_id":"nzo-1","category":"proxyarr"}]}}""")
+                Json(
+                    """{"history":{"slots":[{"nzo_id":"nzo-1","category":"proxyarr","storage":"/downloads/Movie"}]}}"""
+                )
             );
 
         await AddNzb("sab1", Nzb("h@seg"), "movies");
 
         var history = await GetJson("sab1", "mode=history&apikey=k");
         Assert.Equal("movies", SlotCat(history, "history", "nzo-1"));
+        Assert.Equal(
+            "/proxyarr/sab/Movie",
+            history
+                .RootElement.GetProperty("history")
+                .GetProperty("slots")
+                .EnumerateArray()
+                .Single()
+                .GetProperty("storage")
+                .GetString()
+        );
     }
 
     [Fact]
@@ -160,7 +175,11 @@ public sealed class SabnzbdDedupeTests : IDisposable
         StubAddfile("nzo-1");
         _upstream
             .Given(Request.Create().WithPath("/api").WithParam("mode", "get_config").UsingGet())
-            .RespondWith(Json("""{"config":{"categories":[{"name":"existing"}]}}"""));
+            .RespondWith(
+                Json(
+                    """{"config":{"misc":{"complete_dir":"/downloads/complete"},"categories":[{"name":"existing"}]}}"""
+                )
+            );
 
         await AddNzb("sab1", Nzb("cfg@seg"), "movies"); // claimed category "movies"
 
@@ -176,6 +195,14 @@ public sealed class SabnzbdDedupeTests : IDisposable
         Assert.Contains("movies", names); // claimed
         Assert.Contains("ann-a", names); // announced
         Assert.Contains("ann-b", names);
+        Assert.Equal(
+            "/proxyarr/sab/complete",
+            config
+                .RootElement.GetProperty("config")
+                .GetProperty("misc")
+                .GetProperty("complete_dir")
+                .GetString()
+        );
     }
 
     [Fact]

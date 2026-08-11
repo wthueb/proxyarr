@@ -39,13 +39,25 @@ public sealed class QBittorrentDedupeTests : IDisposable
         _upstream.Dispose();
     }
 
-    private HttpClient Boot(string? category = "proxyarr", bool withPlainInstance = false)
+    private HttpClient Boot(
+        string? category = "proxyarr",
+        bool withPlainInstance = false,
+        bool withPathMapping = false
+    )
     {
         var plain = withPlainInstance
             ? """
 
                       - name: plain
                         upstream: main
+                """
+            : "";
+        var pathMapping = withPathMapping
+            ? """
+
+                        path_mappings:
+                          - from: /downloads
+                            to: /proxyarr/qbit
                 """
             : "";
 
@@ -55,7 +67,7 @@ public sealed class QBittorrentDedupeTests : IDisposable
               qbittorrent:
                 upstreams:
                   - name: main
-                    url: {_upstream.Url}
+                    url: {_upstream.Url}{pathMapping}
                 groups:
                   - name: shared
                     category: {category}
@@ -234,6 +246,29 @@ public sealed class QBittorrentDedupeTests : IDisposable
             "movies",
             json.RootElement.EnumerateArray().Single().GetProperty("category").GetString()
         );
+    }
+
+    [Fact]
+    public async Task Info_response_composes_category_and_path_rewriting()
+    {
+        var client = Boot(withPathMapping: true);
+        _upstream
+            .Given(Request.Create().WithPath(InfoPath).UsingGet())
+            .RespondWith(
+                Json(
+                    """[{"hash":"abc","tags":"radarr1","category":"proxyarr","content_path":"/downloads/Movie","save_path":"/downloads"}]"""
+                )
+            );
+
+        var body = await client.GetStringAsync(
+            "/qbittorrent/radarr1/api/v2/torrents/info?category=movies",
+            Ct
+        );
+        using var json = JsonDocument.Parse(body);
+        var torrent = json.RootElement.EnumerateArray().Single();
+        Assert.Equal("movies", torrent.GetProperty("category").GetString());
+        Assert.Equal("/proxyarr/qbit/Movie", torrent.GetProperty("content_path").GetString());
+        Assert.Equal("/proxyarr/qbit", torrent.GetProperty("save_path").GetString());
     }
 
     // ---- categories -----------------------------------------------------------------------------

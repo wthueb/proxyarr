@@ -18,6 +18,7 @@ namespace Proxyarr.Clients.Sabnzbd;
 /// </summary>
 public sealed class SabnzbdDedupe(
     SabnzbdApiClientFactory apiFactory,
+    SabnzbdPathRewriter pathRewriter,
     ClaimStore store,
     DedupeGroups groups,
     KeyedAsyncLock locks,
@@ -209,7 +210,10 @@ public sealed class SabnzbdDedupe(
     )
     {
         var mode = context.Request.Query["mode"].ToString();
-        if (mode is "queue" or "history" or "get_config" or "retry")
+        if (
+            mode is "queue" or "history" or "get_config" or "retry"
+            || (mode == "fullstatus" && SabnzbdPathRewriter.Enabled(instance))
+        )
         {
             proxyRequest.Headers.Remove("Accept-Encoding");
         }
@@ -239,6 +243,8 @@ public sealed class SabnzbdDedupe(
                 "category"
             ),
             "get_config" => await InjectCategoriesAsync(context, instance, response),
+            "fullstatus" when SabnzbdPathRewriter.Enabled(instance) =>
+                await pathRewriter.TransformResponseAsync(context, instance, response),
             "retry" => await UpdateRetryAsync(context, instance, response),
             _ => true,
         };
@@ -289,6 +295,8 @@ public sealed class SabnzbdDedupe(
             }
         }
 
+        pathRewriter.RewriteListing(root, container, instance);
+
         await store.ReconcileAsync(group.Key, nzoIds, PruneGrace, ct);
         return await ResponseBody.ReplaceAsync(context, root.ToJsonString(), "application/json");
     }
@@ -306,7 +314,7 @@ public sealed class SabnzbdDedupe(
             .Where(name => !string.IsNullOrEmpty(name))
             .Distinct(StringComparer.OrdinalIgnoreCase)
             .ToList();
-        if (inject.Count == 0)
+        if (inject.Count == 0 && !SabnzbdPathRewriter.Enabled(instance))
         {
             return true;
         }
@@ -317,13 +325,14 @@ public sealed class SabnzbdDedupe(
             return true;
         }
 
-        if (config["categories"] is not JsonArray categories)
+        var categories = config["categories"] as JsonArray;
+        if (categories is null && inject.Count > 0)
         {
             categories = [];
             config["categories"] = categories;
         }
 
-        var existing = categories
+        var existing = (categories ?? [])
             .OfType<JsonObject>()
             .Select(category => category["name"]?.GetValue<string>())
             .Where(name => name is not null)
@@ -331,8 +340,10 @@ public sealed class SabnzbdDedupe(
 
         foreach (var name in inject.Where(name => !existing.Contains(name)))
         {
-            categories.Add(new JsonObject { ["name"] = name });
+            categories!.Add(new JsonObject { ["name"] = name });
         }
+
+        pathRewriter.RewriteConfig(root, instance);
 
         return await ResponseBody.ReplaceAsync(context, root.ToJsonString(), "application/json");
     }

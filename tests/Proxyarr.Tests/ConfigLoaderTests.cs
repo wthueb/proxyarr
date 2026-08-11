@@ -101,6 +101,87 @@ public class ConfigLoaderTests
     }
 
     [Fact]
+    public void Upstream_path_mappings_are_normalized_ordered_and_inherited()
+    {
+        var config = ConfigLoader.Parse(
+            """
+            clients:
+              qbittorrent:
+                upstreams:
+                  - name: main
+                    url: http://qbit:8080
+                    path_mappings:
+                      - from: /downloads/
+                        to: /proxyarr/qbit/
+                      - from: /downloads/special/
+                        to: /proxyarr/qbit-special/
+                instances:
+                  - name: radarr
+                    upstream: main
+            """
+        );
+
+        var mappings = Assert.Single(config.ResolvedClients).PathMappings;
+        Assert.Equal(2, mappings.Count);
+        Assert.Equal("/downloads/special", mappings[0].From);
+        Assert.Equal("/proxyarr/qbit-special", mappings[0].To);
+        Assert.Equal("/downloads", mappings[1].From);
+        Assert.Equal("/proxyarr/qbit", mappings[1].To);
+    }
+
+    [Theory]
+    [InlineData("downloads", "/proxyarr/qbit", "from")]
+    [InlineData("/downloads", "proxyarr/qbit", "to")]
+    [InlineData("", "/proxyarr/qbit", "from")]
+    [InlineData("/downloads", "", "to")]
+    public void Relative_or_empty_path_mapping_roots_are_rejected(
+        string from,
+        string to,
+        string field
+    )
+    {
+        var ex = Assert.Throws<ConfigurationException>(() =>
+            ConfigLoader.Parse(
+                $$"""
+                clients:
+                  qbittorrent:
+                    upstreams:
+                      - name: main
+                        url: http://qbit:8080
+                        path_mappings:
+                          - from: "{{from}}"
+                            to: "{{to}}"
+                """
+            )
+        );
+
+        Assert.Contains($"'{field}' must be an absolute path", ex.Message);
+    }
+
+    [Fact]
+    public void Duplicate_path_mapping_roots_are_rejected()
+    {
+        var ex = Assert.Throws<ConfigurationException>(() =>
+            ConfigLoader.Parse(
+                """
+                clients:
+                  sabnzbd:
+                    upstreams:
+                      - name: main
+                        url: http://sab:8080
+                        path_mappings:
+                          - from: C:\Downloads
+                            to: /proxyarr/sab-a
+                          - from: c:/downloads/
+                            to: /proxyarr/sab-b
+                """
+            )
+        );
+
+        Assert.Contains("duplicate path mapping", ex.Message);
+    }
+
+    [Fact]
     public void Named_groups_are_the_dedupe_boundary()
     {
         var config = ConfigLoader.Parse(

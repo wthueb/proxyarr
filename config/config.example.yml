@@ -28,6 +28,11 @@ clients:
     upstreams:
       - name: main
         url: http://localhost:8080
+        # Optional: make this upstream's returned paths unique before *arr applies
+        # its host-scoped Remote Path Mappings.
+        # path_mappings:
+        #   - from: /downloads
+        #     to: /proxyarr/qbit-main
 
     # Instances in the same named group share downloads. The group's category
     # is the real category used in qBittorrent.
@@ -55,6 +60,9 @@ clients:
     upstreams:
       - name: main
         url: http://localhost:8085/sabnzbd
+        # path_mappings:
+        #   - from: /downloads
+        #     to: /proxyarr/sab-main
 
     groups:
       - name: radarr
@@ -79,4 +87,5 @@ clients:
         upstream: main
         group: sonarr
 
-# Omit an instance's `group` to make that instance a byte-identical pass-through.
+# Omit an instance's `group` to disable deduplication. It is a byte-identical
+# pass-through unless its upstream explicitly configures `path_mappings`.

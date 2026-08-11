@@ -143,6 +143,51 @@ public static partial class ConfigLoader
             }
 
             upstream.Url = upstream.Url.TrimEnd('/');
+
+            if (upstream.PathMappings is null)
+            {
+                throw new ConfigurationException(
+                    $"clients.{type} upstream '{upstream.Name}' path_mappings must be a list."
+                );
+            }
+
+            var seenFromPaths = new HashSet<string>(StringComparer.Ordinal);
+            foreach (var mapping in upstream.PathMappings)
+            {
+                if (mapping is null)
+                {
+                    throw new ConfigurationException(
+                        $"clients.{type} upstream '{upstream.Name}' path_mappings contains an empty entry."
+                    );
+                }
+
+                mapping.From = ReportedPathMapper.NormalizeRoot(mapping.From);
+                mapping.To = ReportedPathMapper.NormalizeRoot(mapping.To);
+                if (!ReportedPathMapper.IsAbsolute(mapping.From))
+                {
+                    throw new ConfigurationException(
+                        $"clients.{type} upstream '{upstream.Name}' path mapping 'from' must be an absolute path."
+                    );
+                }
+
+                if (!ReportedPathMapper.IsAbsolute(mapping.To))
+                {
+                    throw new ConfigurationException(
+                        $"clients.{type} upstream '{upstream.Name}' path mapping 'to' must be an absolute path."
+                    );
+                }
+
+                if (!seenFromPaths.Add(ReportedPathMapper.ComparisonKey(mapping.From)))
+                {
+                    throw new ConfigurationException(
+                        $"clients.{type} upstream '{upstream.Name}' has duplicate path mapping from '{mapping.From}'."
+                    );
+                }
+            }
+
+            upstream.PathMappings = upstream
+                .PathMappings.OrderByDescending(mapping => mapping.From.Length)
+                .ToList();
         }
 
         var groups = new Dictionary<string, ClientGroupConfig>(StringComparer.OrdinalIgnoreCase);
@@ -212,6 +257,7 @@ public static partial class ConfigLoader
                     Name = instance.Name,
                     Type = type,
                     Upstream = upstream.Url,
+                    PathMappings = upstream.PathMappings,
                     Dedupe = group is null
                         ? null
                         : new DedupeConfig

@@ -46,6 +46,21 @@ public sealed class ClientUpstreamConfig
     public string Name { get; set; } = "";
 
     public string Url { get; set; } = "";
+
+    /// <summary>
+    /// Optional upstream-path to synthetic reported-path rewrites. These make paths from several
+    /// real clients unambiguous even though *arr sees every client at the proxy's one host.
+    /// </summary>
+    public List<ClientPathMappingConfig> PathMappings { get; set; } = [];
+}
+
+public sealed class ClientPathMappingConfig
+{
+    /// <summary>Path prefix as returned by the real download client.</summary>
+    public string From { get; set; } = "";
+
+    /// <summary>Synthetic path prefix Proxyarr reports to *arr.</summary>
+    public string To { get; set; } = "";
 }
 
 public sealed class ClientGroupConfig
@@ -146,8 +161,15 @@ public sealed class ClientInstanceConfig
     public string Upstream { get; set; } = "";
 
     /// <summary>
-    /// Opt-in cross-instance download deduplication. Null (the common case) means byte-identical
-    /// pass-through. See <see cref="DedupeConfig"/>.
+    /// Path rewrites inherited from the named upstream. The list is normalized and ordered by
+    /// longest <c>From</c> prefix during configuration loading.
+    /// </summary>
+    public IReadOnlyList<ClientPathMappingConfig> PathMappings { get; set; } = [];
+
+    /// <summary>
+    /// Opt-in cross-instance download deduplication. Null means deduplication is disabled; the
+    /// instance is byte-identical pass-through when <see cref="PathMappings"/> is also empty.
+    /// See <see cref="DedupeConfig"/>.
     /// </summary>
     public DedupeConfig? Dedupe { get; set; }
 

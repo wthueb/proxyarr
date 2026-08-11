@@ -11,7 +11,10 @@ namespace Proxyarr.Clients.QBittorrent;
 /// src/NzbDrone.Core/Download/Clients/QBittorrent/QBittorrentProxyV2.cs in Radarr. Instances with
 /// dedupe enabled get category→tag hooks on top of the same endpoint surface.
 /// </summary>
-public sealed class QBittorrentAdapter(QBittorrentDedupe dedupe) : IDownloadClientAdapter
+public sealed class QBittorrentAdapter(
+    QBittorrentDedupe dedupe,
+    QBittorrentPathRewriter pathRewriter
+) : IDownloadClientAdapter
 {
     /// <summary>
     /// The endpoint pattern/method surface, independent of dedupe. Pass-through and dedupe route
@@ -38,22 +41,69 @@ public sealed class QBittorrentAdapter(QBittorrentDedupe dedupe) : IDownloadClie
 
     public string Type => "qbittorrent";
 
-    public IReadOnlyList<ProxyRoute> GetRoutes(ClientInstanceConfig instance) =>
-        instance.DedupeEnabled ? DedupeRoutes() : PassThroughRoutes;
+    public IReadOnlyList<ProxyRoute> GetRoutes(ClientInstanceConfig instance)
+    {
+        if (instance.DedupeEnabled)
+        {
+            return DedupeRoutes(instance);
+        }
 
-    private IReadOnlyList<ProxyRoute> DedupeRoutes() =>
+        return QBittorrentPathRewriter.Enabled(instance)
+            ? PathMappedPassThroughRoutes()
+            : PassThroughRoutes;
+    }
+
+    private IReadOnlyList<ProxyRoute> PathMappedPassThroughRoutes() =>
+        PassThroughRoutes
+            .Select(route =>
+                route.Pattern switch
+                {
+                    "/api/v2/app/preferences" => route with
+                    {
+                        TransformRequest = pathRewriter.StripAcceptEncodingAsync,
+                        TransformResponse = pathRewriter.TransformPreferencesResponseAsync,
+                    },
+                    "/api/v2/torrents/info" => route with
+                    {
+                        TransformRequest = pathRewriter.StripAcceptEncodingAsync,
+                        TransformResponse = pathRewriter.TransformInfoResponseAsync,
+                    },
+                    "/api/v2/torrents/properties" => route with
+                    {
+                        TransformRequest = pathRewriter.StripAcceptEncodingAsync,
+                        TransformResponse = pathRewriter.TransformPropertiesResponseAsync,
+                    },
+                    "/api/v2/torrents/categories" => route with
+                    {
+                        TransformRequest = pathRewriter.StripAcceptEncodingAsync,
+                        TransformResponse = pathRewriter.TransformCategoriesResponseAsync,
+                    },
+                    _ => route,
+                }
+            )
+            .ToList();
+
+    private IReadOnlyList<ProxyRoute> DedupeRoutes(ClientInstanceConfig instance) =>
         [
             ProxyRoute.Post("/api/v2/auth/login"),
             ProxyRoute.Get("/api/v2/app/webapiVersion"),
             ProxyRoute.Get("/api/v2/app/version"),
-            ProxyRoute.Get("/api/v2/app/preferences"),
+            PathMappedRoute(
+                ProxyRoute.Get("/api/v2/app/preferences"),
+                instance,
+                pathRewriter.TransformPreferencesResponseAsync
+            ),
             new ProxyRoute(
                 "/api/v2/torrents/info",
                 ["GET"],
                 TransformRequest: dedupe.TransformInfoRequestAsync,
                 TransformResponse: dedupe.TransformInfoResponseAsync
             ),
-            ProxyRoute.Get("/api/v2/torrents/properties"),
+            PathMappedRoute(
+                ProxyRoute.Get("/api/v2/torrents/properties"),
+                instance,
+                pathRewriter.TransformPropertiesResponseAsync
+            ),
             ProxyRoute.Get("/api/v2/torrents/files"),
             new ProxyRoute(
                 "/api/v2/torrents/categories",
@@ -81,4 +131,17 @@ public sealed class QBittorrentAdapter(QBittorrentDedupe dedupe) : IDownloadClie
             ProxyRoute.Post("/api/v2/torrents/topPrio"),
             ProxyRoute.Post("/api/v2/torrents/setForceStart"),
         ];
+
+    private ProxyRoute PathMappedRoute(
+        ProxyRoute route,
+        ClientInstanceConfig instance,
+        Func<HttpContext, ClientInstanceConfig, HttpResponseMessage?, ValueTask<bool>> response
+    ) =>
+        QBittorrentPathRewriter.Enabled(instance)
+            ? route with
+            {
+                TransformRequest = pathRewriter.StripAcceptEncodingAsync,
+                TransformResponse = response,
+            }
+            : route;
 }

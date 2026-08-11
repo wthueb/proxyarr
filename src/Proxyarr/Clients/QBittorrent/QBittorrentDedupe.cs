@@ -19,6 +19,7 @@ namespace Proxyarr.Clients.QBittorrent;
 /// </summary>
 public sealed class QBittorrentDedupe(
     QBittorrentApiClientFactory apiFactory,
+    QBittorrentPathRewriter pathRewriter,
     DedupeGroups groups,
     KeyedAsyncLock locks,
     ILogger<QBittorrentDedupe> logger
@@ -167,11 +168,13 @@ public sealed class QBittorrentDedupe(
         HttpResponseMessage? response
     )
     {
-        if (
-            response is null
-            || !response.IsSuccessStatusCode
-            || context.Items[RequestedCategoryKey] is not string category
-        )
+        if (response is null || !response.IsSuccessStatusCode)
+        {
+            return true;
+        }
+
+        var category = context.Items[RequestedCategoryKey] as string;
+        if (category is null && !QBittorrentPathRewriter.Enabled(instance))
         {
             return true;
         }
@@ -179,16 +182,21 @@ public sealed class QBittorrentDedupe(
         var json = await response.Content.ReadAsStringAsync(context.RequestAborted);
         if (TryParse(json) is not JsonArray array)
         {
-            return true;
+            return await ResponseBody.ReplaceAsync(context, json, "application/json");
         }
 
-        foreach (var item in array)
+        if (category is not null)
         {
-            if (item is JsonObject torrent)
+            foreach (var item in array)
             {
-                torrent["category"] = category;
+                if (item is JsonObject torrent)
+                {
+                    torrent["category"] = category;
+                }
             }
         }
+
+        pathRewriter.RewriteInfo(array, instance);
 
         return await ResponseBody.ReplaceAsync(context, array.ToJsonString(), "application/json");
     }
@@ -218,7 +226,7 @@ public sealed class QBittorrentDedupe(
         }
 
         var remembered = KnownCategories(instance);
-        if (remembered.IsEmpty)
+        if (remembered.IsEmpty && !QBittorrentPathRewriter.Enabled(instance))
         {
             return true;
         }
@@ -226,7 +234,7 @@ public sealed class QBittorrentDedupe(
         var json = await response.Content.ReadAsStringAsync(context.RequestAborted);
         if (TryParse(json) is not JsonObject categories)
         {
-            return true;
+            return await ResponseBody.ReplaceAsync(context, json, "application/json");
         }
 
         foreach (var name in remembered.Keys)
@@ -236,6 +244,8 @@ public sealed class QBittorrentDedupe(
                 categories[name] = new JsonObject { ["name"] = name, ["savePath"] = "" };
             }
         }
+
+        pathRewriter.RewriteCategories(categories, instance);
 
         return await ResponseBody.ReplaceAsync(
             context,
