@@ -2,6 +2,11 @@ bin/
 obj/
 TestResults/
 
+# SQLite databases (runtime dedup store + the ef design-time scratch db)
+*.db
+*.db-wal
+*.db-shm
+
 .direnv/
 .env
 

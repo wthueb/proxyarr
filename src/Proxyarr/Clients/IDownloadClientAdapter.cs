@@ -1,3 +1,5 @@
+using Proxyarr.Configuration;
+
 namespace Proxyarr.Clients;
 
 /// <summary>
@@ -14,6 +16,10 @@ public interface IDownloadClientAdapter
     /// <summary>Value matched against the <c>type</c> field of a client in the YAML config.</summary>
     string Type { get; }
 
-    /// <summary>The endpoints exposed for this client type; everything else is rejected.</summary>
-    IReadOnlyList<ProxyRoute> Routes { get; }
+    /// <summary>
+    /// The endpoints exposed for this client type; everything else is rejected. Takes the specific
+    /// instance so an adapter can return different routes per instance — e.g. plain pass-through
+    /// when its <see cref="ClientInstanceConfig.Dedupe"/> is off and hook-laden variants when on.
+    /// </summary>
+    IReadOnlyList<ProxyRoute> GetRoutes(ClientInstanceConfig instance);
 }

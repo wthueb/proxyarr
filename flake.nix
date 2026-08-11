@@ -22,13 +22,15 @@
       perSystem =
         { pkgs, ... }:
         {
-          devShells.default = pkgs.mkShell {
-            packages = with pkgs; [
-              dotnetCorePackages.sdk_10_0
-            ];
+          devShells.default =
+            let
+              sdk = pkgs.dotnetCorePackages.sdk_10_0;
+            in
+            pkgs.mkShell {
+              packages = [ sdk ];
 
-            env.DOTNET_ROOT = "${pkgs.dotnetCorePackages.sdk_10_0}/share/dotnet";
-          };
+              env.DOTNET_ROOT = "${sdk}/share/dotnet";
+            };
 
           treefmt = {
             projectRootFile = "flake.nix";

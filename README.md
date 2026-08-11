@@ -2,7 +2,9 @@
 
 An HTTP proxy that sits between Radarr/Sonarr and your download clients. It exposes only
 the API endpoints the \*arr download client integrations actually use and passes them through,
-untouched, to a configured qBittorrent or SABnzbd instance.
+untouched, to a configured qBittorrent or SABnzbd instance. Optionally, it can
+[deduplicate downloads](#cross-instance-deduplication) so several \*arr instances sharing one
+client download each release only once.
 
 **Supported upstream versions**
 
@@ -85,6 +87,90 @@ Unknown keys, bad levels, duplicate names, and malformed upstreams fail at start
 message naming the problem. Multiple instances of the same type are fine (`qbit-movies`,
 `qbit-4k`, ...).
 
+## Cross-instance deduplication
+
+Several Radarr/Sonarr instances often share one qBittorrent and one SABnzbd. When two of them
+grab the same release, qBittorrent's one-category-per-torrent model means whichever adds first
+"owns" the torrent and the other's download vanishes, and SABnzbd downloads the same NZB twice.
+
+Turn on `dedupe` per instance and proxyarr makes those instances **share one download**. It is
+opt-in: without a `dedupe` block an instance is a byte-identical pass-through exactly as before.
+
+```yaml
+database: /config/proxyarr.db # optional; defaults to proxyarr.db next to the config
+
+clients:
+  - name: radarr-qbit # point several *arrs at the SAME qBittorrent, one prefix each
+    type: qbittorrent
+    upstream: http://qbit:8080
+    dedupe:
+      enabled: true
+      category: proxyarr # real category set upstream; omit to add with no category
+      # group: main       # optional override; only for one client on two hostnames
+  - name: sonarr-qbit
+    type: qbittorrent
+    upstream: http://qbit:8080
+    dedupe:
+      enabled: true
+      category: proxyarr # every member of a group must agree on this
+
+  - name: radarr-sab
+    type: sabnzbd
+    upstream: http://sab:8080
+    dedupe:
+      enabled: true
+      category: proxyarr
+      announce_categories: [movies, tv] # sabnzbd only (see below)
+```
+
+**Grouping.** Dedupe-enabled instances of the same type that share a normalized upstream URL form
+a *group*, derived automatically — nothing about the *arr instances is configured here. Ownership
+of a shared download is tracked by the **proxyarr instance name** (`radarr-qbit`, `sonarr-qbit`,
+...). The optional `dedupe.group` key is only needed for the exotic case of one client reachable
+via two hostnames.
+
+**qBittorrent — categories become tags.** A torrent can hold many tags but only one category, so
+each instance's ownership is a tag named after it. The real category assigned upstream is
+`dedupe.category` (or none if unset); the category each *arr sends is echoed back to it but never
+forwarded. Requests are translated on the fly: `torrents/info?category=X` filters by the
+instance's tag and reports `X` back; `add` tags the torrent instead of fighting over its category;
+`delete` removes only that instance's tag. qBittorrent itself is the state store — no database is
+used for the qBittorrent side.
+
+**qBittorrent — files are never deleted early.** A shared torrent's files survive until it (1) has
+passed one of its seed limits and (2) carries no instance tags. While any tag remains, its
+share-limit action is pinned to *stop*. When the last tag is removed, proxyarr checks the current
+ratio/seeding-time against the effective limits: already past → a real delete with files; not yet →
+the torrent's per-torrent share-limit action is set to *remove torrent and its files* so
+qBittorrent deletes it natively when a limit is finally hit. The request's `deleteFiles` flag is
+ignored under dedupe, and torrents whose merged limits are unlimited are left seeding indefinitely.
+Share limits merge across instances by the maximum (`-1` unlimited beats all; `-2` global loses to
+any explicit value).
+
+**SABnzbd — claims in SQLite.** SABnzbd has no tag concept, so ownership is tracked in a small
+SQLite database (`database:`, WAL-mode, migrated on startup). The same release from different
+indexers dedupes because the content key is a hash of the NZB's segment message-IDs. A duplicate
+`addfile` adds a claim and returns the existing `nzo_id`; a `delete` removes that instance's claim
+and only forwards the real delete (honoring `del_files`) once the **last** claim is gone.
+
+> **First-run category check (SABnzbd).** On a fresh SABnzbd, Radarr's "does my category exist?"
+> check runs before anything has been added. List the categories your *arrs use under
+> `announce_categories` so proxyarr reports them as existing; categories are otherwise learned from
+> the claims that already exist.
+
+### Known edges (accepted)
+
+- `torrents/setCategory` swaps the instance tag for a category tag; if a sibling then deletes,
+  qBittorrent's remove-when-limits-met can take over the renamed instance's torrent. (Radarr's
+  post-import categories are unused in this setup.)
+- Radarr's `deleteFiles` flag is ignored for qBittorrent under dedupe — cleanup always waits for a
+  seed limit, then removes with files. Torrents with unlimited merged limits are never auto-deleted.
+- A crash between the SABnzbd upstream add and the database insert makes the next instance re-add
+  once (it self-heals).
+- Third-party callers parsing qBittorrent's JSON add response would see a synthetic `Ok.` on a
+  duplicate add. `hashes=all` / `value=all` are forwarded unchanged with a warning (Radarr never
+  sends them). Pre-existing user tags identical to an instance name would count as managed.
+
 ### Logging
 
 Both formats emit one event per line with identical snake_case fields; `logfmt` is the default:
@@ -153,8 +239,9 @@ src/Proxyarr/
 ├── Program.cs                  # config load, logging setup, endpoint mapping
 ├── Configuration/              # YAML config model, loader, validation
 ├── Clients/                    # one adapter per download client type
-│   ├── QBittorrent/
-│   └── Sabnzbd/
+│   ├── QBittorrent/            # pass-through + dedup (tags, bencode/magnet hashing, share limits)
+│   └── Sabnzbd/                # pass-through + dedup (claims, NZB content key)
+├── Dedupe/                     # shared dedup infra: groups, keyed lock, SQLite claim store (EF Core)
 ├── Forwarding/                 # YARP pass-through (prefix strip, request logging)
 └── Logging/                    # logfmt/JSON formatters, query redaction
 tests/

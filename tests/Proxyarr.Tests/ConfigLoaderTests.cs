@@ -1,9 +1,198 @@
 using Proxyarr.Configuration;
+using Proxyarr.Dedupe;
 
 namespace Proxyarr.Tests;
 
 public class ConfigLoaderTests
 {
+    [Fact]
+    public void Parses_a_dedupe_block()
+    {
+        var config = ConfigLoader.Parse(
+            """
+            database: /data/proxyarr.db
+            clients:
+              - name: radarr1
+                type: qbittorrent
+                upstream: http://qbit:8080
+                dedupe:
+                  enabled: true
+                  category: proxyarr
+                  group: main
+              - name: sab1
+                type: sabnzbd
+                upstream: http://sab:8080
+                dedupe:
+                  enabled: true
+                  announce_categories: [movies, tv]
+            """
+        );
+
+        Assert.Equal("/data/proxyarr.db", config.Database);
+        Assert.True(config.Clients[0].DedupeEnabled);
+        Assert.Equal("proxyarr", config.Clients[0].Dedupe!.Category);
+        Assert.Equal("main", config.Clients[0].Dedupe!.Group);
+        Assert.Equal(["movies", "tv"], config.Clients[1].Dedupe!.AnnounceCategories);
+    }
+
+    [Fact]
+    public void Dedupe_is_off_by_default()
+    {
+        var config = ConfigLoader.Parse(
+            """
+            clients:
+              - name: qbit
+                type: qbittorrent
+                upstream: http://localhost:8080
+            """
+        );
+
+        Assert.Null(config.Clients[0].Dedupe);
+        Assert.False(config.Clients[0].DedupeEnabled);
+    }
+
+    [Fact]
+    public void Dedupe_sub_keys_without_enabled_are_rejected()
+    {
+        var ex = Assert.Throws<ConfigurationException>(() =>
+            ConfigLoader.Parse(
+                """
+                clients:
+                  - name: qbit
+                    type: qbittorrent
+                    upstream: http://localhost:8080
+                    dedupe:
+                      category: proxyarr
+                """
+            )
+        );
+
+        Assert.Contains("enabled", ex.Message);
+    }
+
+    [Fact]
+    public void Announce_categories_on_a_non_sabnzbd_client_are_rejected()
+    {
+        var ex = Assert.Throws<ConfigurationException>(() =>
+            ConfigLoader.Parse(
+                """
+                clients:
+                  - name: qbit
+                    type: qbittorrent
+                    upstream: http://localhost:8080
+                    dedupe:
+                      enabled: true
+                      announce_categories: [movies]
+                """
+            )
+        );
+
+        Assert.Contains("announce_categories", ex.Message);
+    }
+
+    [Fact]
+    public void Group_members_must_agree_on_category()
+    {
+        var ex = Assert.Throws<ConfigurationException>(() =>
+            ConfigLoader.Parse(
+                """
+                clients:
+                  - name: radarr1
+                    type: qbittorrent
+                    upstream: http://qbit:8080
+                    dedupe:
+                      enabled: true
+                      category: alpha
+                  - name: radarr2
+                    type: qbittorrent
+                    upstream: http://qbit:8080
+                    dedupe:
+                      enabled: true
+                      category: beta
+                """
+            )
+        );
+
+        Assert.Contains("category", ex.Message);
+    }
+
+    [Fact]
+    public void Groups_are_derived_from_the_shared_upstream_url()
+    {
+        var config = ConfigLoader.Parse(
+            """
+            clients:
+              - name: radarr1
+                type: qbittorrent
+                upstream: http://qbit:8080/
+                dedupe:
+                  enabled: true
+                  category: proxyarr
+              - name: radarr2
+                type: qbittorrent
+                upstream: http://qbit:8080
+                dedupe:
+                  enabled: true
+                  category: proxyarr
+              - name: lonely
+                type: qbittorrent
+                upstream: http://other:8080
+                dedupe:
+                  enabled: true
+                  category: proxyarr
+            """
+        );
+
+        var groups = DedupeGroups.Build(config);
+        var shared = groups.For(config.Clients[0]);
+        Assert.NotNull(shared);
+        Assert.Same(shared, groups.For(config.Clients[1]));
+        Assert.Equal(["radarr1", "radarr2"], shared!.Members.Select(m => m.Name).Order());
+        Assert.NotSame(shared, groups.For(config.Clients[2]));
+    }
+
+    [Fact]
+    public void The_group_override_merges_instances_on_different_hostnames()
+    {
+        var config = ConfigLoader.Parse(
+            """
+            clients:
+              - name: radarr1
+                type: qbittorrent
+                upstream: http://qbit-a:8080
+                dedupe:
+                  enabled: true
+                  category: proxyarr
+                  group: shared
+              - name: radarr2
+                type: qbittorrent
+                upstream: http://qbit-b:8080
+                dedupe:
+                  enabled: true
+                  category: proxyarr
+                  group: shared
+            """
+        );
+
+        var groups = DedupeGroups.Build(config);
+        Assert.Same(groups.For(config.Clients[0]), groups.For(config.Clients[1]));
+    }
+
+    [Fact]
+    public void Non_dedupe_instances_have_no_group()
+    {
+        var config = ConfigLoader.Parse(
+            """
+            clients:
+              - name: qbit
+                type: qbittorrent
+                upstream: http://localhost:8080
+            """
+        );
+
+        Assert.Null(DedupeGroups.Build(config).For(config.Clients[0]));
+    }
+
     [Fact]
     public void Parses_a_full_config()
     {

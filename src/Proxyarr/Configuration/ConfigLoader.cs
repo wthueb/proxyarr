@@ -1,4 +1,5 @@
 using System.Text.RegularExpressions;
+using Proxyarr.Dedupe;
 using YamlDotNet.Core;
 using YamlDotNet.Serialization;
 using YamlDotNet.Serialization.NamingConventions;
@@ -124,6 +125,66 @@ public static partial class ConfigLoader
 
             // A trailing slash would produce '//' when the endpoint path is appended.
             client.Upstream = client.Upstream.TrimEnd('/');
+
+            ValidateDedupe(client);
+        }
+
+        ValidateDedupeGroups(config);
+    }
+
+    private static void ValidateDedupe(ClientInstanceConfig client)
+    {
+        if (client.Dedupe is not { } dedupe)
+        {
+            return;
+        }
+
+        var hasSubKeys =
+            dedupe.Category is not null
+            || dedupe.Group is not null
+            || dedupe.AnnounceCategories is { Count: > 0 };
+
+        if (!dedupe.Enabled)
+        {
+            if (hasSubKeys)
+            {
+                throw new ConfigurationException(
+                    $"Client '{client.Name}' sets dedupe options but dedupe.enabled is not true. "
+                        + "Set 'enabled: true' or remove the dedupe block."
+                );
+            }
+
+            return;
+        }
+
+        if (
+            dedupe.AnnounceCategories is { Count: > 0 }
+            && !client.Type.Equals("sabnzbd", StringComparison.OrdinalIgnoreCase)
+        )
+        {
+            throw new ConfigurationException(
+                $"Client '{client.Name}': dedupe.announce_categories is only valid for sabnzbd clients."
+            );
+        }
+    }
+
+    /// <summary>All dedupe-enabled members of a group must agree on the real upstream category.</summary>
+    private static void ValidateDedupeGroups(ProxyConfig config)
+    {
+        foreach (var group in DedupeGroups.Build(config).All)
+        {
+            var categories = group
+                .Members.Select(member => member.Dedupe!.Category)
+                .Distinct()
+                .ToList();
+
+            if (categories.Count > 1)
+            {
+                throw new ConfigurationException(
+                    $"Dedupe group members [{string.Join(", ", group.Members.Select(m => m.Name))}] "
+                        + "disagree on dedupe.category; all members of a group must declare the same category."
+                );
+            }
         }
     }
 

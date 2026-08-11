@@ -113,7 +113,8 @@ public sealed class RouteHookTests : IDisposable
         Assert.Contains(
             _logs.Events,
             logEvent =>
-                logEvent.Level == LogLevel.Warning
+                logEvent.Level == LogLevel.Information
+                && logEvent.Message.StartsWith("Handled")
                 && logEvent.Message.Contains("short-circuited by the OnRequest hook")
         );
     }
@@ -128,7 +129,7 @@ public sealed class RouteHookTests : IDisposable
             new ProxyRoute(
                 "/info",
                 ["GET"],
-                TransformRequest: (_, proxyRequest) =>
+                TransformRequest: (_, _, proxyRequest) =>
                 {
                     proxyRequest.Headers.Add("X-Proxyarr", "injected");
                     return ValueTask.CompletedTask;
@@ -152,7 +153,7 @@ public sealed class RouteHookTests : IDisposable
             new ProxyRoute(
                 "/version",
                 ["GET"],
-                TransformResponse: async (context, proxyResponse) =>
+                TransformResponse: async (context, _, proxyResponse) =>
                 {
                     if (proxyResponse is null)
                     {
@@ -213,6 +214,8 @@ public sealed class RouteHookTests : IDisposable
     {
         public string Type => "stub";
 
-        public IReadOnlyList<ProxyRoute> Routes { get; } = routes;
+        public IReadOnlyList<ProxyRoute> GetRoutes(
+            Proxyarr.Configuration.ClientInstanceConfig instance
+        ) => routes;
     }
 }

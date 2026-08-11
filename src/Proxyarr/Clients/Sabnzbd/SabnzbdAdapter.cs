@@ -1,3 +1,5 @@
+using Proxyarr.Configuration;
+
 namespace Proxyarr.Clients.Sabnzbd;
 
 /// <summary>
@@ -6,7 +8,7 @@ namespace Proxyarr.Clients.Sabnzbd;
 /// than paths. The modes mirror exactly what Radarr's client uses, see
 /// src/NzbDrone.Core/Download/Clients/Sabnzbd/SabnzbdProxy.cs in Radarr.
 /// </summary>
-public sealed class SabnzbdAdapter : IDownloadClientAdapter
+public sealed class SabnzbdAdapter(SabnzbdDedupe dedupe) : IDownloadClientAdapter
 {
     /// <remarks>
     /// Deliberately excludes destructive/administrative modes (<c>shutdown</c>, <c>set_config</c>,
@@ -27,7 +29,20 @@ public sealed class SabnzbdAdapter : IDownloadClientAdapter
 
     public string Type => "sabnzbd";
 
-    public IReadOnlyList<ProxyRoute> Routes { get; } = [new("/api", ["GET", "POST"], ValidateMode)];
+    public IReadOnlyList<ProxyRoute> GetRoutes(ClientInstanceConfig instance) =>
+        instance.DedupeEnabled
+            ?
+            [
+                new(
+                    "/api",
+                    ["GET", "POST"],
+                    Validate: ValidateMode,
+                    OnRequest: dedupe.OnRequestAsync,
+                    TransformRequest: dedupe.TransformRequestAsync,
+                    TransformResponse: dedupe.TransformResponseAsync
+                ),
+            ]
+            : [new("/api", ["GET", "POST"], ValidateMode)];
 
     private static IResult? ValidateMode(HttpRequest request)
     {

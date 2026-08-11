@@ -1,7 +1,12 @@
 using System.Diagnostics;
+using System.Net;
+using Microsoft.Data.Sqlite;
+using Microsoft.EntityFrameworkCore;
 using Proxyarr.Clients.QBittorrent;
 using Proxyarr.Clients.Sabnzbd;
 using Proxyarr.Configuration;
+using Proxyarr.Dedupe;
+using Proxyarr.Dedupe.Db;
 using Proxyarr.Forwarding;
 using Proxyarr.Logging;
 
@@ -16,6 +21,58 @@ public static class DownloadClientEndpoints
         // their own upstream calls via an injected IHttpClientFactory.
         services.AddHttpClient();
         services.AddSingleton<UpstreamForwarder>();
+
+        // Dedup infrastructure. DedupeGroups is derived from the (already-registered) ProxyConfig;
+        // the keyed lock serializes concurrent adds/deletes of the same item within a group.
+        services.AddSingleton(provider =>
+            DedupeGroups.Build(provider.GetRequiredService<ProxyConfig>())
+        );
+        services.AddSingleton<KeyedAsyncLock>();
+
+        // qBittorrent dedup side-calls reuse the incoming SID cookie, so the client's own cookie jar
+        // must be disabled or it swallows the manually attached Cookie header.
+        services
+            .AddHttpClient(QBittorrentApiClient.HttpClientName)
+            .ConfigurePrimaryHttpMessageHandler(() =>
+                new SocketsHttpHandler
+                {
+                    UseProxy = false,
+                    AllowAutoRedirect = false,
+                    AutomaticDecompression = DecompressionMethods.None,
+                    UseCookies = false,
+                }
+            );
+        services.AddSingleton<QBittorrentApiClientFactory>();
+        services.AddSingleton<QBittorrentDedupe>();
+
+        // SABnzbd dedup: SQLite-backed claim store (context per operation via the factory) plus the
+        // apikey-reusing side-call client. The DB path is defaulted in Program before this runs.
+        services.AddDbContextFactory<ProxyarrDbContext>(
+            (provider, options) =>
+            {
+                var config = provider.GetRequiredService<ProxyConfig>();
+                var connectionString = new SqliteConnectionStringBuilder
+                {
+                    DataSource = config.Database,
+                }.ToString();
+                options.UseSqlite(connectionString);
+                options.AddInterceptors(new SqlitePragmaInterceptor());
+            }
+        );
+        services.AddSingleton<ClaimStore>();
+        services
+            .AddHttpClient(SabnzbdApiClient.HttpClientName)
+            .ConfigurePrimaryHttpMessageHandler(() =>
+                new SocketsHttpHandler
+                {
+                    UseProxy = false,
+                    AllowAutoRedirect = false,
+                    AutomaticDecompression = DecompressionMethods.None,
+                }
+            );
+        services.AddSingleton<SabnzbdApiClientFactory>();
+        services.AddSingleton<SabnzbdDedupe>();
+
         services.AddSingleton<IDownloadClientAdapter, QBittorrentAdapter>();
         services.AddSingleton<IDownloadClientAdapter, SabnzbdAdapter>();
         return services;
@@ -34,6 +91,21 @@ public static class DownloadClientEndpoints
         var requestLogger = app
             .Services.GetRequiredService<ILoggerFactory>()
             .CreateLogger("Proxyarr.Requests");
+
+        // Initialize the SABnzbd claim store up front (runs migrations) so a bad database path fails
+        // at startup rather than on the first NZB add.
+        if (
+            config.Clients.Any(instance =>
+                instance.Type.Equals("sabnzbd", StringComparison.OrdinalIgnoreCase)
+                && instance.DedupeEnabled
+            )
+        )
+        {
+            app.Services.GetRequiredService<ClaimStore>()
+                .InitializeAsync()
+                .GetAwaiter()
+                .GetResult();
+        }
 
         foreach (var instance in config.Clients)
         {
@@ -87,8 +159,9 @@ public static class DownloadClientEndpoints
     {
         var prefix = new PathString($"/{instance.Name}");
         var passThroughTransformer = new PrefixStripTransformer(prefix);
+        var routes = adapter.GetRoutes(instance);
 
-        foreach (var route in adapter.Routes)
+        foreach (var route in routes)
         {
             var pattern = $"/{instance.Name}{route.Pattern}";
 
@@ -103,13 +176,21 @@ public static class DownloadClientEndpoints
                 continue;
             }
 
-            // Routes without transforms share the instance's prefix-only transformer.
+            // Routes without transforms share the instance's prefix-only transformer. Otherwise the
+            // instance is curried into the transform delegates here so PrefixStripTransformer keeps
+            // its instance-agnostic signature.
             var transformer = route is { TransformRequest: null, TransformResponse: null }
                 ? passThroughTransformer
                 : new PrefixStripTransformer(
                     prefix,
-                    route.TransformRequest,
-                    route.TransformResponse
+                    route.TransformRequest is { } transformRequest
+                        ? (context, proxyRequest) =>
+                            transformRequest(context, instance, proxyRequest)
+                        : null,
+                    route.TransformResponse is { } transformResponse
+                        ? (context, proxyResponse) =>
+                            transformResponse(context, instance, proxyResponse)
+                        : null
                 );
 
             app.MapMethods(
@@ -136,14 +217,17 @@ public static class DownloadClientEndpoints
 
                         if (await onRequest(context, instance) is { } shortCircuit)
                         {
-                            requestLogger.LogWarning(
-                                "Rejected {Instance} {Method} {Path}{Query}: short-circuited by the OnRequest hook",
+                            // Not a rejection: an OnRequest short-circuit is normal operation
+                            // (e.g. a SABnzbd dedup hit answered locally without an upstream call).
+                            await shortCircuit.ExecuteAsync(context);
+                            requestLogger.LogInformation(
+                                "Handled {Instance} {Method} {Path}{Query} -> {StatusCode} (short-circuited by the OnRequest hook)",
                                 instance.Name,
                                 context.Request.Method,
                                 context.Request.Path.Value,
-                                QueryRedactor.Redact(context.Request)
+                                QueryRedactor.Redact(context.Request),
+                                context.Response.StatusCode
                             );
-                            await shortCircuit.ExecuteAsync(context);
                             return;
                         }
 
@@ -162,7 +246,7 @@ public static class DownloadClientEndpoints
             "Proxying /{Name} ({Type}, {RouteCount} endpoints) -> {Upstream}",
             instance.Name,
             adapter.Type,
-            adapter.Routes.Count,
+            routes.Count,
             instance.Upstream
         );
     }

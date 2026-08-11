@@ -28,7 +28,8 @@ namespace Proxyarr.Clients;
 /// <param name="TransformRequest">
 /// Optional mutation of the outgoing upstream request, invoked after the prefix-strip/URI rewrite
 /// so it sees the final destination. May change headers, the URI, or replace
-/// <see cref="HttpRequestMessage.Content"/>.
+/// <see cref="HttpRequestMessage.Content"/>. The <see cref="ClientInstanceConfig"/> is the instance
+/// the request is being forwarded for (e.g. so the hook can read its dedupe settings).
 /// </param>
 /// <param name="TransformResponse">
 /// Optional mutation of the upstream's response, invoked after the status code and headers have
@@ -47,8 +48,13 @@ public sealed record ProxyRoute(
     IReadOnlyList<string> Methods,
     Func<HttpRequest, IResult?>? Validate = null,
     Func<HttpContext, ClientInstanceConfig, ValueTask<IResult?>>? OnRequest = null,
-    Func<HttpContext, HttpRequestMessage, ValueTask>? TransformRequest = null,
-    Func<HttpContext, HttpResponseMessage?, ValueTask<bool>>? TransformResponse = null,
+    Func<HttpContext, ClientInstanceConfig, HttpRequestMessage, ValueTask>? TransformRequest = null,
+    Func<
+        HttpContext,
+        ClientInstanceConfig,
+        HttpResponseMessage?,
+        ValueTask<bool>
+    >? TransformResponse = null,
     Func<HttpContext, ClientInstanceConfig, Task<IResult>>? Handle = null
 )
 {

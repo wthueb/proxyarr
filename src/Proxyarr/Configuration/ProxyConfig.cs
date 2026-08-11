@@ -8,6 +8,13 @@ public sealed class ProxyConfig
     public LoggingConfig Logging { get; set; } = new();
 
     public List<ClientInstanceConfig> Clients { get; set; } = [];
+
+    /// <summary>
+    /// Path to the SQLite database that backs SABnzbd cross-instance dedup. Optional; defaults to
+    /// <c>proxyarr.db</c> next to the config file (set in <c>Program</c>). Only used when at least
+    /// one sabnzbd client has dedupe enabled.
+    /// </summary>
+    public string? Database { get; set; }
 }
 
 public sealed class LoggingConfig
@@ -81,4 +88,43 @@ public sealed class ClientInstanceConfig
     /// (e.g. <c>http://sab-host:8080/sabnzbd</c>).
     /// </summary>
     public string Upstream { get; set; } = "";
+
+    /// <summary>
+    /// Opt-in cross-instance download deduplication. Null (the common case) means byte-identical
+    /// pass-through. See <see cref="DedupeConfig"/>.
+    /// </summary>
+    public DedupeConfig? Dedupe { get; set; }
+
+    /// <summary>Whether this instance participates in cross-instance dedup.</summary>
+    public bool DedupeEnabled => Dedupe is { Enabled: true };
+}
+
+/// <summary>
+/// Per-instance cross-instance deduplication settings. Instances of the same client type that share
+/// a normalized upstream URL (or an explicit <see cref="Group"/>) form a dedup group: a release
+/// grabbed by several of them is downloaded once and shared, tracked by the proxy instance name.
+/// </summary>
+public sealed class DedupeConfig
+{
+    /// <summary>Master switch. When false, the instance is a plain pass-through and the other keys must be unset.</summary>
+    public bool Enabled { get; set; }
+
+    /// <summary>
+    /// The real qBittorrent/SABnzbd category assigned to shared downloads. When unset, content is
+    /// added with no category at all (the category the *arr sends is never forwarded upstream).
+    /// </summary>
+    public string? Category { get; set; }
+
+    /// <summary>
+    /// Optional override that forces this instance into a named group. Groups are normally derived
+    /// automatically from the upstream URL; this is only for exotic setups where one client is
+    /// reachable via two hostnames.
+    /// </summary>
+    public string? Group { get; set; }
+
+    /// <summary>
+    /// SABnzbd only: category names to inject into the <c>get_config</c> response so Radarr's
+    /// "category exists" check passes without those categories existing upstream.
+    /// </summary>
+    public List<string>? AnnounceCategories { get; set; }
 }

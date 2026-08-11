@@ -43,7 +43,7 @@ public sealed class QBittorrentPassThroughTests : IDisposable
     public static TheoryData<string, string> AllDeclaredEndpoints()
     {
         var data = new TheoryData<string, string>();
-        foreach (var route in new QBittorrentAdapter().Routes)
+        foreach (var route in QBittorrentAdapter.PassThroughRoutes)
         {
             foreach (var method in route.Methods)
             {

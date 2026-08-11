@@ -12,6 +12,14 @@ var configPath =
 
 var config = ConfigLoader.Load(configPath);
 
+// Default the SQLite path (SABnzbd dedup only) to sit next to the config file, so a relative
+// working directory can't move it. Program owns this default so the DI registration sees a
+// concrete path.
+config.Database ??= Path.Combine(
+    Path.GetDirectoryName(Path.GetFullPath(configPath)) ?? ".",
+    "proxyarr.db"
+);
+
 builder.Logging.ClearProviders();
 builder.Logging.SetMinimumLevel(config.Logging.ParsedLevel);
 builder.Logging.AddConsole(options =>
