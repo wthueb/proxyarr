@@ -36,6 +36,7 @@ public sealed class PrefixStripTransformer(
             upstreamPath,
             httpContext.Request.QueryString
         );
+        proxyRequest.Headers.Host = proxyRequest.RequestUri.Authority;
 
         if (transformRequest is not null)
         {

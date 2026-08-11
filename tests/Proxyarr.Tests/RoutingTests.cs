@@ -166,6 +166,43 @@ public class RoutingTests
     }
 
     [Fact]
+    public async Task Forwarded_requests_use_the_upstream_authority_as_the_host_header()
+    {
+        using var upstream = WireMockServer.Start();
+        upstream
+            .Given(Request.Create().WithPath("/api").UsingGet())
+            .RespondWith(Response.Create().WithBody("""{"version": "5.0.4"}"""));
+
+        using var factory = new ProxyAppFactory(
+            $"""
+            clients:
+              sabnzbd:
+                upstreams:
+                  - name: main
+                    url: {upstream.Url}
+                instances:
+                  - name: radarr
+                    upstream: main
+            """
+        );
+        using var client = factory.CreateClient();
+        using var request = new HttpRequestMessage(
+            HttpMethod.Get,
+            "/sabnzbd/radarr/api?mode=version"
+        );
+        request.Headers.Host = "proxyarr:8484";
+
+        using var response = await client.SendAsync(request, TestContext.Current.CancellationToken);
+
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        var received = Assert.Single(upstream.LogEntries)!;
+        Assert.Equal(
+            new Uri(upstream.Url!).Authority,
+            received.RequestMessage!.Headers!["Host"].Single()
+        );
+    }
+
+    [Fact]
     public async Task Unreachable_upstreams_return_502()
     {
         // Port 9 (discard) is reserved and nothing listens on it locally.
