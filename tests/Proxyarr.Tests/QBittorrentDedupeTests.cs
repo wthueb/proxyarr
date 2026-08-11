@@ -19,6 +19,7 @@ public sealed class QBittorrentDedupeTests : IDisposable
     private const string AddPath = "/api/v2/torrents/add";
     private const string AddTagsPath = "/api/v2/torrents/addTags";
     private const string RemoveTagsPath = "/api/v2/torrents/removeTags";
+    private const string SetCategoryPath = "/api/v2/torrents/setCategory";
     private const string SetShareLimitsPath = "/api/v2/torrents/setShareLimits";
     private const string DeletePath = "/api/v2/torrents/delete";
     private const string CreateCategoryPath = "/api/v2/torrents/createCategory";
@@ -150,6 +151,41 @@ public sealed class QBittorrentDedupeTests : IDisposable
         Assert.Equal("Ok.", await response.Content.ReadAsStringAsync(Ct));
         Assert.Empty(Entries(AddPath)); // never re-added
         Assert.Contains("radarr2", Single(AddTagsPath));
+        Assert.Empty(Entries(SetCategoryPath)); // already has the group's category
+    }
+
+    [Fact]
+    public async Task Add_existing_overrides_a_category_that_does_not_match_the_group()
+    {
+        var client = Boot();
+        var (torrent, hash) = TestTorrent.Create("proxyarr-wrong-category");
+        StubInfo(TorrentArray(hash, tags: "radarr1", category: "other"));
+        StubPost(SetCategoryPath);
+        StubPost(AddTagsPath);
+
+        var response = await AddTorrent(client, "radarr2", torrent);
+
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        Assert.Empty(Entries(AddPath));
+        var setCategory = Single(SetCategoryPath);
+        Assert.Contains($"hashes={hash}", setCategory);
+        Assert.Contains("category=proxyarr", setCategory);
+    }
+
+    [Fact]
+    public async Task Add_existing_clears_the_category_when_the_group_has_none()
+    {
+        var client = Boot(category: null);
+        var (torrent, hash) = TestTorrent.Create("proxyarr-clear-category");
+        StubInfo(TorrentArray(hash, tags: "radarr1", category: "other"));
+        StubPost(SetCategoryPath);
+        StubPost(AddTagsPath);
+
+        await AddTorrent(client, "radarr2", torrent);
+
+        var setCategory = Single(SetCategoryPath);
+        Assert.Contains($"hashes={hash}", setCategory);
+        Assert.Contains("category=", setCategory);
     }
 
     [Fact]
@@ -555,6 +591,7 @@ public sealed class QBittorrentDedupeTests : IDisposable
     private static string TorrentArray(
         string hash,
         string tags,
+        string category = "proxyarr",
         string ratio = "0",
         string seedingTime = "0",
         string ratioLimit = "-2",
@@ -562,7 +599,7 @@ public sealed class QBittorrentDedupeTests : IDisposable
         string inactive = "-2"
     ) =>
         $$"""
-            [{"hash":"{{hash}}","category":"proxyarr","tags":"{{tags}}","ratio":{{ratio}},"seeding_time":{{seedingTime}},"ratio_limit":{{ratioLimit}},"seeding_time_limit":{{seedingTimeLimit}},"inactive_seeding_time_limit":{{inactive}}}]
+            [{"hash":"{{hash}}","category":"{{category}}","tags":"{{tags}}","ratio":{{ratio}},"seeding_time":{{seedingTime}},"ratio_limit":{{ratioLimit}},"seeding_time_limit":{{seedingTimeLimit}},"inactive_seeding_time_limit":{{inactive}}}]
             """;
 
     private IReadOnlyList<WireMock.Logging.ILogEntry> Entries(string path) =>

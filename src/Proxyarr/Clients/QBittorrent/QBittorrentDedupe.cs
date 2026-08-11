@@ -85,6 +85,7 @@ public sealed class QBittorrentDedupe(
         if (allExist)
         {
             // Duplicate grab: adopt the existing torrent by tagging it and raising limits to the max.
+            await OverrideMismatchedCategoriesAsync(api, existing, group, ct);
             await api.AddTagsAsync(hashes, [instance.Name], ct);
             await RaiseShareLimitsAsync(api, existing, requestedLimits, ct);
             logger.LogInformation(
@@ -113,6 +114,7 @@ public sealed class QBittorrentDedupe(
                 )
             )
             {
+                await OverrideMismatchedCategoriesAsync(api, recheck, group, ct);
                 await api.AddTagsAsync(hashes, [instance.Name], ct);
                 await RaiseShareLimitsAsync(api, recheck, requestedLimits, ct);
                 return OkResult;
@@ -120,6 +122,11 @@ public sealed class QBittorrentDedupe(
 
             return Results.Text(addBody, statusCode: (int)addStatus);
         }
+
+        // A multi-torrent add can contain torrents that already existed alongside new ones. qBt
+        // does not necessarily apply add options to duplicates, so normalize those existing
+        // torrents explicitly after the add succeeds.
+        await OverrideMismatchedCategoriesAsync(api, existing, group, ct);
 
         // The instance tag was applied at add time via the rebuilt form's `tags` field, so no
         // separate addTags call is needed here. Pin the share-limit action to Stop so no global
@@ -466,6 +473,25 @@ public sealed class QBittorrentDedupe(
             {
                 await api.SetShareLimitsAsync([torrent.Hash], merged, ShareLimitAction.Stop, ct);
             }
+        }
+    }
+
+    private static async Task OverrideMismatchedCategoriesAsync(
+        QBittorrentApiClient api,
+        IReadOnlyList<TorrentInfo> torrents,
+        DedupeGroup group,
+        CancellationToken ct
+    )
+    {
+        var category = group.Members[0].Dedupe?.Category ?? "";
+        var mismatchedHashes = torrents
+            .Where(torrent => !string.Equals(torrent.Category, category, StringComparison.Ordinal))
+            .Select(torrent => torrent.Hash)
+            .ToList();
+
+        if (mismatchedHashes.Count > 0)
+        {
+            await api.SetCategoryAsync(mismatchedHashes, category, ct);
         }
     }
 

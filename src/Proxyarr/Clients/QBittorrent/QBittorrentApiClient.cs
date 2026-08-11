@@ -136,6 +136,21 @@ public sealed class QBittorrentApiClient(HttpClient http, string upstream, strin
         CancellationToken cancellationToken
     ) => PostFormAsync("torrents/removeTags", TagForm(hashes, tags), cancellationToken);
 
+    public Task SetCategoryAsync(
+        IEnumerable<string> hashes,
+        string category,
+        CancellationToken cancellationToken
+    ) =>
+        PostFormAsync(
+            "torrents/setCategory",
+            new Dictionary<string, string>
+            {
+                ["hashes"] = string.Join('|', hashes),
+                ["category"] = category,
+            },
+            cancellationToken
+        );
+
     public Task SetShareLimitsAsync(
         IEnumerable<string> hashes,
         ShareLimits limits,
