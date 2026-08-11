@@ -221,6 +221,32 @@ public sealed class QBittorrentDedupeTests : IDisposable
     // ---- info -----------------------------------------------------------------------------------
 
     [Fact]
+    public async Task Info_request_without_category_still_filters_by_instance_tag()
+    {
+        var client = Boot();
+        _upstream
+            .Given(Request.Create().WithPath(InfoPath).UsingGet())
+            .RespondWith(Json("""[{"hash":"abc","tags":"radarr1","category":"proxyarr"}]"""));
+
+        var response = await client.GetAsync(
+            "/qbittorrent/radarr1/api/v2/torrents/info?hashes=abc",
+            Ct
+        );
+
+        var received = Single(_upstream.LogEntries.Last());
+        Assert.Equal("radarr1", received.Query!["tag"].Single());
+        Assert.Equal("abc", received.Query!["hashes"].Single());
+        Assert.False(received.Query!.ContainsKey("category"));
+
+        var body = await response.Content.ReadAsStringAsync(Ct);
+        using var json = JsonDocument.Parse(body);
+        Assert.Equal(
+            "proxyarr",
+            json.RootElement.EnumerateArray().Single().GetProperty("category").GetString()
+        );
+    }
+
+    [Fact]
     public async Task Info_request_rewrites_category_to_tag_and_strips_accept_encoding()
     {
         var client = Boot();

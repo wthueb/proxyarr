@@ -219,10 +219,10 @@ group's `category` is the real category assigned upstream; omit it to add withou
 **qBittorrent — categories become tags.** A torrent can hold many tags but only one category, so
 each instance's ownership is a tag named after it. The real category assigned upstream is the
 group's `category` (or none if unset); the category each *arr sends is echoed back to it but never
-forwarded. Requests are translated on the fly: `torrents/info?category=X` filters by the
-instance's tag and reports `X` back; `add` tags the torrent instead of fighting over its category;
-`delete` removes only that instance's tag. qBittorrent itself is the state store — no database is
-used for the qBittorrent side.
+forwarded. Every `torrents/info` listing is filtered by the instance's tag, even when the *arr does
+not configure a category; when it does send `category=X`, Proxyarr also reports `X` back. `add`
+tags the torrent instead of fighting over its category; `delete` removes only that instance's tag.
+qBittorrent itself is the state store — no database is used for the qBittorrent side.
 
 **qBittorrent — files are never deleted early.** A shared torrent's files survive until it (1) has
 passed one of its seed limits and (2) carries no instance tags. While any tag remains, its

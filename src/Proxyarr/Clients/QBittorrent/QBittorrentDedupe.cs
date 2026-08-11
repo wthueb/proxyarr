@@ -130,7 +130,10 @@ public sealed class QBittorrentDedupe(
 
     // ---- torrents/info --------------------------------------------------------------------------
 
-    /// <summary>Rewrites <c>category=X</c> to <c>tag={instance}</c> and remembers X to echo it back.</summary>
+    /// <summary>
+    /// Scopes listings to <c>tag={instance}</c>. When the caller supplies <c>category=X</c>, X is
+    /// remembered and echoed back in the response.
+    /// </summary>
     public ValueTask TransformInfoRequestAsync(
         HttpContext context,
         ClientInstanceConfig instance,
@@ -140,13 +143,11 @@ public sealed class QBittorrentDedupe(
         proxyRequest.Headers.Remove("Accept-Encoding");
 
         var category = context.Request.Query["category"].ToString();
-        if (string.IsNullOrEmpty(category))
+        if (!string.IsNullOrEmpty(category))
         {
-            return ValueTask.CompletedTask;
+            RememberCategory(instance, category);
+            context.Items[RequestedCategoryKey] = category;
         }
-
-        RememberCategory(instance, category);
-        context.Items[RequestedCategoryKey] = category;
 
         var uri = proxyRequest.RequestUri!;
         var parsed = Microsoft.AspNetCore.WebUtilities.QueryHelpers.ParseQuery(uri.Query);

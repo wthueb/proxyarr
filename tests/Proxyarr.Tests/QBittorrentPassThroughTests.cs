@@ -155,6 +155,7 @@ public sealed class QBittorrentPassThroughTests : IDisposable
         var received = Assert.Single(_upstream.LogEntries)!;
         Assert.Equal("radarr", received.RequestMessage!.Query!["category"].Single());
         Assert.Equal("abcd1234", received.RequestMessage!.Query!["hashes"].Single());
+        Assert.False(received.RequestMessage!.Query!.ContainsKey("tag"));
     }
 
     [Fact]
