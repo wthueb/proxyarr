@@ -6,83 +6,281 @@ namespace Proxyarr.Tests;
 public class ConfigLoaderTests
 {
     [Fact]
-    public void Parses_a_dedupe_block()
+    public void Parses_named_upstreams_groups_and_instances()
     {
         var config = ConfigLoader.Parse(
             """
+            server:
+              host: 0.0.0.0
+              port: 8484
+            logging:
+              level: debug
             database: /data/proxyarr.db
             clients:
-              - name: radarr1
-                type: qbittorrent
-                upstream: http://qbit:8080
-                dedupe:
-                  enabled: true
-                  category: proxyarr
-                  group: main
-              - name: sab1
-                type: sabnzbd
-                upstream: http://sab:8080
-                dedupe:
-                  enabled: true
-                  announce_categories: [movies, tv]
+              qbittorrent:
+                upstreams:
+                  - name: main
+                    url: http://qbit:8080/
+                groups:
+                  - name: radarr
+                    category: radarr
+                  - name: sonarr
+                    category: sonarr
+                instances:
+                  - name: radarr
+                    upstream: main
+                    group: radarr
+                  - name: radarr4k
+                    upstream: main
+                    group: radarr
+                  - name: sonarr
+                    upstream: main
+                    group: sonarr
+                  - name: sonarr4k
+                    upstream: main
+                    group: sonarr
+              sabnzbd:
+                upstreams:
+                  - name: main
+                    url: http://sabnzbd:9092
+                groups:
+                  - name: radarr
+                    category: radarr
+                  - name: sonarr
+                    category: sonarr
+                instances:
+                  - name: radarr
+                    upstream: main
+                    group: radarr
+                  - name: radarr4k
+                    upstream: main
+                    group: radarr
+                  - name: sonarr
+                    upstream: main
+                    group: sonarr
+                  - name: sonarr4k
+                    upstream: main
+                    group: sonarr
             """
         );
 
         Assert.Equal("/data/proxyarr.db", config.Database);
-        Assert.True(config.Clients[0].DedupeEnabled);
-        Assert.Equal("proxyarr", config.Clients[0].Dedupe!.Category);
-        Assert.Equal("main", config.Clients[0].Dedupe!.Group);
-        Assert.Equal(["movies", "tv"], config.Clients[1].Dedupe!.AnnounceCategories);
+        Assert.Equal(8, config.ResolvedClients.Count);
+
+        var radarr = Instance(config, "qbittorrent", "radarr");
+        Assert.Equal("http://qbit:8080", radarr.Upstream);
+        Assert.True(radarr.DedupeEnabled);
+        Assert.Equal("radarr", radarr.Dedupe!.Group);
+        Assert.Equal("radarr", radarr.Dedupe.Category);
+
+        var sab = Instance(config, "sabnzbd", "radarr");
+        Assert.Equal("http://sabnzbd:9092", sab.Upstream);
+        Assert.Equal("radarr", sab.Dedupe!.Category);
     }
 
     [Fact]
-    public void Dedupe_is_off_by_default()
+    public void An_instance_without_a_group_is_pass_through()
     {
         var config = ConfigLoader.Parse(
             """
             clients:
-              - name: qbit
-                type: qbittorrent
-                upstream: http://localhost:8080
+              qbittorrent:
+                upstreams:
+                  - name: main
+                    url: http://localhost:8080
+                instances:
+                  - name: direct
+                    upstream: main
             """
         );
 
-        Assert.Null(config.Clients[0].Dedupe);
-        Assert.False(config.Clients[0].DedupeEnabled);
+        var instance = Assert.Single(config.ResolvedClients);
+        Assert.False(instance.DedupeEnabled);
+        Assert.Null(instance.Dedupe);
+        Assert.Null(DedupeGroups.Build(config).For(instance));
     }
 
     [Fact]
-    public void Dedupe_sub_keys_without_enabled_are_rejected()
+    public void Named_groups_are_the_dedupe_boundary()
     {
+        var config = ConfigLoader.Parse(
+            """
+            clients:
+              qbittorrent:
+                upstreams:
+                  - name: main
+                    url: http://qbit:8080
+                groups:
+                  - name: radarr
+                    category: radarr
+                  - name: sonarr
+                    category: sonarr
+                instances:
+                  - name: radarr
+                    upstream: main
+                    group: radarr
+                  - name: radarr4k
+                    upstream: main
+                    group: radarr
+                  - name: sonarr
+                    upstream: main
+                    group: sonarr
+            """
+        );
+
+        var groups = DedupeGroups.Build(config);
+        var radarr = Instance(config, "qbittorrent", "radarr");
+        var radarr4k = Instance(config, "qbittorrent", "radarr4k");
+        var sonarr = Instance(config, "qbittorrent", "sonarr");
+
+        Assert.Same(groups.For(radarr), groups.For(radarr4k));
+        Assert.NotSame(groups.For(radarr), groups.For(sonarr));
+        Assert.Equal("qbittorrent|group:radarr", groups.For(radarr)!.Key);
+        Assert.Equal("qbittorrent|group:sonarr", groups.For(sonarr)!.Key);
+    }
+
+    [Fact]
+    public void Instance_names_can_be_reused_across_client_types()
+    {
+        var config = ConfigLoader.Parse(
+            """
+            clients:
+              qbittorrent:
+                upstreams:
+                  - name: main
+                    url: http://qbit:8080
+                instances:
+                  - name: radarr
+                    upstream: main
+              sabnzbd:
+                upstreams:
+                  - name: main
+                    url: http://sab:8080
+                instances:
+                  - name: radarr
+                    upstream: main
+            """
+        );
+
+        Assert.Equal(2, config.ResolvedClients.Count);
+        Assert.Equal("qbittorrent", config.ResolvedClients[0].Type);
+        Assert.Equal("sabnzbd", config.ResolvedClients[1].Type);
+    }
+
+    [Theory]
+    [InlineData("upstream", "missing")]
+    [InlineData("group", "missing")]
+    public void Unknown_instance_references_are_rejected(string field, string value)
+    {
+        var group = field == "group" ? $"\n        group: {value}" : "";
+        var upstream = field == "upstream" ? value : "main";
         var ex = Assert.Throws<ConfigurationException>(() =>
             ConfigLoader.Parse(
-                """
+                $"""
                 clients:
-                  - name: qbit
-                    type: qbittorrent
-                    upstream: http://localhost:8080
-                    dedupe:
-                      category: proxyarr
+                  qbittorrent:
+                    upstreams:
+                      - name: main
+                        url: http://qbit:8080
+                    instances:
+                      - name: radarr
+                        upstream: {upstream}{group}
                 """
             )
         );
 
-        Assert.Contains("enabled", ex.Message);
+        Assert.Contains($"unknown {field}", ex.Message);
+    }
+
+    [Theory]
+    [InlineData("upstreams", "url: http://one:8080", "url: http://two:8080")]
+    [InlineData("groups", "category: one", "category: two")]
+    [InlineData("instances", "upstream: main", "upstream: main")]
+    public void Duplicate_names_within_a_section_are_rejected(
+        string section,
+        string firstValue,
+        string secondValue
+    )
+    {
+        var ex = Assert.Throws<ConfigurationException>(() =>
+            ConfigLoader.Parse(
+                $"""
+                clients:
+                  qbittorrent:
+                    upstreams:
+                      - name: main
+                        url: http://qbit:8080
+                    {section}:
+                      - name: duplicate
+                        {firstValue}
+                      - name: duplicate
+                        {secondValue}
+                """
+            )
+        );
+
+        Assert.Contains("Duplicate", ex.Message);
+    }
+
+    [Theory]
+    [InlineData("")]
+    [InlineData("Qbit")]
+    [InlineData("my client")]
+    [InlineData("client/1")]
+    [InlineData("-qbit")]
+    public void Invalid_instance_names_are_rejected(string name)
+    {
+        var ex = Assert.Throws<ConfigurationException>(() =>
+            ConfigLoader.Parse(
+                $"""
+                clients:
+                  qbittorrent:
+                    upstreams:
+                      - name: main
+                        url: http://localhost:8080
+                    instances:
+                      - name: "{name}"
+                        upstream: main
+                """
+            )
+        );
+
+        Assert.Contains("invalid", ex.Message);
+    }
+
+    [Theory]
+    [InlineData("localhost:8080")]
+    [InlineData("ftp://localhost")]
+    [InlineData("not a url")]
+    [InlineData("")]
+    public void Invalid_upstream_urls_are_rejected(string url)
+    {
+        var ex = Assert.Throws<ConfigurationException>(() =>
+            ConfigLoader.Parse(
+                $"""
+                clients:
+                  qbittorrent:
+                    upstreams:
+                      - name: main
+                        url: "{url}"
+                """
+            )
+        );
+
+        Assert.Contains("invalid URL", ex.Message);
     }
 
     [Fact]
-    public void Announce_categories_on_a_non_sabnzbd_client_are_rejected()
+    public void Announce_categories_on_a_qbittorrent_group_are_rejected()
     {
         var ex = Assert.Throws<ConfigurationException>(() =>
             ConfigLoader.Parse(
                 """
                 clients:
-                  - name: qbit
-                    type: qbittorrent
-                    upstream: http://localhost:8080
-                    dedupe:
-                      enabled: true
-                      announce_categories: [movies]
+                  qbittorrent:
+                    groups:
+                      - name: main
+                        announce_categories: [movies]
                 """
             )
         );
@@ -91,166 +289,58 @@ public class ConfigLoaderTests
     }
 
     [Fact]
-    public void Group_members_must_agree_on_category()
-    {
-        var ex = Assert.Throws<ConfigurationException>(() =>
-            ConfigLoader.Parse(
-                """
-                clients:
-                  - name: radarr1
-                    type: qbittorrent
-                    upstream: http://qbit:8080
-                    dedupe:
-                      enabled: true
-                      category: alpha
-                  - name: radarr2
-                    type: qbittorrent
-                    upstream: http://qbit:8080
-                    dedupe:
-                      enabled: true
-                      category: beta
-                """
-            )
-        );
-
-        Assert.Contains("category", ex.Message);
-    }
-
-    [Fact]
-    public void Groups_are_derived_from_the_shared_upstream_url()
+    public void Names_that_match_root_endpoints_are_valid_inside_a_type_namespace()
     {
         var config = ConfigLoader.Parse(
             """
             clients:
-              - name: radarr1
-                type: qbittorrent
-                upstream: http://qbit:8080/
-                dedupe:
-                  enabled: true
-                  category: proxyarr
-              - name: radarr2
-                type: qbittorrent
-                upstream: http://qbit:8080
-                dedupe:
-                  enabled: true
-                  category: proxyarr
-              - name: lonely
-                type: qbittorrent
-                upstream: http://other:8080
-                dedupe:
-                  enabled: true
-                  category: proxyarr
+              qbittorrent:
+                upstreams:
+                  - name: main
+                    url: http://localhost:8080
+                instances:
+                  - name: healthz
+                    upstream: main
             """
         );
 
-        var groups = DedupeGroups.Build(config);
-        var shared = groups.For(config.Clients[0]);
-        Assert.NotNull(shared);
-        Assert.Same(shared, groups.For(config.Clients[1]));
-        Assert.Equal(["radarr1", "radarr2"], shared!.Members.Select(m => m.Name).Order());
-        Assert.NotSame(shared, groups.For(config.Clients[2]));
+        Assert.Equal("healthz", Assert.Single(config.ResolvedClients).Name);
     }
 
     [Fact]
-    public void The_group_override_merges_instances_on_different_hostnames()
+    public void Applies_defaults_when_sections_are_omitted()
     {
-        var config = ConfigLoader.Parse(
-            """
-            clients:
-              - name: radarr1
-                type: qbittorrent
-                upstream: http://qbit-a:8080
-                dedupe:
-                  enabled: true
-                  category: proxyarr
-                  group: shared
-              - name: radarr2
-                type: qbittorrent
-                upstream: http://qbit-b:8080
-                dedupe:
-                  enabled: true
-                  category: proxyarr
-                  group: shared
-            """
-        );
-
-        var groups = DedupeGroups.Build(config);
-        Assert.Same(groups.For(config.Clients[0]), groups.For(config.Clients[1]));
-    }
-
-    [Fact]
-    public void Non_dedupe_instances_have_no_group()
-    {
-        var config = ConfigLoader.Parse(
-            """
-            clients:
-              - name: qbit
-                type: qbittorrent
-                upstream: http://localhost:8080
-            """
-        );
-
-        Assert.Null(DedupeGroups.Build(config).For(config.Clients[0]));
-    }
-
-    [Fact]
-    public void Parses_a_full_config()
-    {
-        var config = ConfigLoader.Parse(
-            """
-            server:
-              host: 127.0.0.1
-              port: 9999
-
-            clients:
-              - name: qbittorrent
-                type: qbittorrent
-                upstream: http://localhost:8080
-
-              - name: sabnzbd
-                type: sabnzbd
-                upstream: http://localhost:8085/sabnzbd
-            """
-        );
-
-        Assert.Equal("127.0.0.1", config.Server.Host);
-        Assert.Equal(9999, config.Server.Port);
-        Assert.Equal(2, config.Clients.Count);
-        Assert.Equal("qbittorrent", config.Clients[0].Name);
-        Assert.Equal("http://localhost:8080", config.Clients[0].Upstream);
-        Assert.Equal("sabnzbd", config.Clients[1].Type);
-        Assert.Equal("http://localhost:8085/sabnzbd", config.Clients[1].Upstream);
-    }
-
-    [Fact]
-    public void Applies_defaults_when_server_section_is_omitted()
-    {
-        var config = ConfigLoader.Parse(
-            """
-            clients:
-              - name: qbit
-                type: qbittorrent
-                upstream: http://localhost:8080
-            """
-        );
+        var config = ConfigLoader.Parse("clients: {}");
 
         Assert.Equal("0.0.0.0", config.Server.Host);
         Assert.Equal(8484, config.Server.Port);
+        Assert.Equal("logfmt", config.Logging.Format);
+        Assert.False(config.Logging.UsesJson);
+        Assert.Equal(Microsoft.Extensions.Logging.LogLevel.Information, config.Logging.ParsedLevel);
+        Assert.Empty(config.ResolvedClients);
     }
 
     [Fact]
-    public void Trims_trailing_slash_from_upstream()
+    public void Logging_section_is_parsed()
     {
         var config = ConfigLoader.Parse(
             """
-            clients:
-              - name: qbit
-                type: qbittorrent
-                upstream: http://localhost:8080/
+            logging:
+              level: debug
+              format: json
+              overrides:
+                Microsoft.AspNetCore: warning
+                Yarp: error
+            clients: {}
             """
         );
 
-        Assert.Equal("http://localhost:8080", config.Clients[0].Upstream);
+        Assert.True(config.Logging.UsesJson);
+        Assert.Equal(Microsoft.Extensions.Logging.LogLevel.Debug, config.Logging.ParsedLevel);
+        Assert.Equal(
+            Microsoft.Extensions.Logging.LogLevel.Warning,
+            config.Logging.ParsedOverrides.Single(o => o.Key == "Microsoft.AspNetCore").Value
+        );
     }
 
     [Fact]
@@ -270,8 +360,8 @@ public class ConfigLoaderTests
         var ex = Assert.Throws<ConfigurationException>(() =>
             ConfigLoader.Parse(
                 """
-                server:
-                  prot: 1234
+                clients:
+                  sabznbd: {}
                 """
             )
         );
@@ -283,136 +373,6 @@ public class ConfigLoaderTests
     public void Malformed_yaml_is_rejected()
     {
         Assert.Throws<ConfigurationException>(() => ConfigLoader.Parse("clients: ["));
-    }
-
-    [Theory]
-    [InlineData("")]
-    [InlineData("Qbit")]
-    [InlineData("my client")]
-    [InlineData("client/1")]
-    [InlineData("-qbit")]
-    public void Invalid_instance_names_are_rejected(string name)
-    {
-        var ex = Assert.Throws<ConfigurationException>(() =>
-            ConfigLoader.Parse(
-                $"""
-                clients:
-                  - name: "{name}"
-                    type: qbittorrent
-                    upstream: http://localhost:8080
-                """
-            )
-        );
-
-        Assert.Contains("invalid", ex.Message);
-    }
-
-    [Fact]
-    public void Reserved_instance_names_are_rejected()
-    {
-        var ex = Assert.Throws<ConfigurationException>(() =>
-            ConfigLoader.Parse(
-                """
-                clients:
-                  - name: healthz
-                    type: qbittorrent
-                    upstream: http://localhost:8080
-                """
-            )
-        );
-
-        Assert.Contains("reserved", ex.Message);
-    }
-
-    [Fact]
-    public void Duplicate_instance_names_are_rejected()
-    {
-        var ex = Assert.Throws<ConfigurationException>(() =>
-            ConfigLoader.Parse(
-                """
-                clients:
-                  - name: qbit
-                    type: qbittorrent
-                    upstream: http://localhost:8080
-                  - name: qbit
-                    type: sabnzbd
-                    upstream: http://localhost:8085
-                """
-            )
-        );
-
-        Assert.Contains("Duplicate", ex.Message);
-    }
-
-    [Theory]
-    [InlineData("localhost:8080")]
-    [InlineData("ftp://localhost")]
-    [InlineData("not a url")]
-    [InlineData("")]
-    public void Invalid_upstreams_are_rejected(string upstream)
-    {
-        var ex = Assert.Throws<ConfigurationException>(() =>
-            ConfigLoader.Parse(
-                $"""
-                clients:
-                  - name: qbit
-                    type: qbittorrent
-                    upstream: "{upstream}"
-                """
-            )
-        );
-
-        Assert.Contains("upstream", ex.Message);
-    }
-
-    [Fact]
-    public void Missing_type_is_rejected()
-    {
-        var ex = Assert.Throws<ConfigurationException>(() =>
-            ConfigLoader.Parse(
-                """
-                clients:
-                  - name: qbit
-                    upstream: http://localhost:8080
-                """
-            )
-        );
-
-        Assert.Contains("type", ex.Message);
-    }
-
-    [Fact]
-    public void Logging_defaults_to_logfmt_at_information()
-    {
-        var config = ConfigLoader.Parse("clients: []");
-
-        Assert.Equal("logfmt", config.Logging.Format);
-        Assert.False(config.Logging.UsesJson);
-        Assert.Equal(Microsoft.Extensions.Logging.LogLevel.Information, config.Logging.ParsedLevel);
-        Assert.Empty(config.Logging.Overrides);
-    }
-
-    [Fact]
-    public void Logging_section_is_parsed()
-    {
-        var config = ConfigLoader.Parse(
-            """
-            logging:
-              level: debug
-              format: json
-              overrides:
-                Microsoft.AspNetCore: warning
-                Yarp: error
-            clients: []
-            """
-        );
-
-        Assert.True(config.Logging.UsesJson);
-        Assert.Equal(Microsoft.Extensions.Logging.LogLevel.Debug, config.Logging.ParsedLevel);
-        Assert.Equal(
-            Microsoft.Extensions.Logging.LogLevel.Warning,
-            config.Logging.ParsedOverrides.Single(o => o.Key == "Microsoft.AspNetCore").Value
-        );
     }
 
     [Fact]
@@ -493,4 +453,7 @@ public class ConfigLoaderTests
 
         Assert.Contains("server.port", ex.Message);
     }
+
+    private static ClientInstanceConfig Instance(ProxyConfig config, string type, string name) =>
+        config.ResolvedClients.Single(instance => instance.Type == type && instance.Name == name);
 }

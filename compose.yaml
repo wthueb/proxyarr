@@ -1,5 +1,5 @@
-# curl http://localhost:8484/qbittorrent/api/v2/app/version
-# curl "http://localhost:8484/sabnzbd/api?mode=version&output=json"
+# curl http://localhost:8484/qbittorrent/direct/api/v2/app/version
+# curl "http://localhost:8484/sabnzbd/direct/api?mode=version&output=json"
 services:
   proxy:
     build: .

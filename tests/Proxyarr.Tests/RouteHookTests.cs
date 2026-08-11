@@ -2,6 +2,7 @@ using System.Net;
 using System.Text;
 using Microsoft.AspNetCore.Http;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.DependencyInjection.Extensions;
 using Microsoft.Extensions.Logging;
 using Proxyarr.Clients;
 using Proxyarr.Tests.Support;
@@ -27,12 +28,20 @@ public sealed class RouteHookTests : IDisposable
         _factory = new ProxyAppFactory(
             $"""
             clients:
-              - name: stub
-                type: stub
-                upstream: {_upstream.Url}
+              qbittorrent:
+                upstreams:
+                  - name: main
+                    url: {_upstream.Url}
+                instances:
+                  - name: stub
+                    upstream: main
             """,
             _logs,
-            services => services.AddSingleton<IDownloadClientAdapter>(new StubAdapter(routes))
+            services =>
+            {
+                services.RemoveAll<IDownloadClientAdapter>();
+                services.AddSingleton<IDownloadClientAdapter>(new StubAdapter(routes));
+            }
         );
         _client = _factory.CreateClient();
         return _client;
@@ -75,7 +84,7 @@ public sealed class RouteHookTests : IDisposable
         var sentBytes = await content.ReadAsByteArrayAsync(TestContext.Current.CancellationToken);
 
         var response = await client.PostAsync(
-            "/stub/echo",
+            "/qbittorrent/stub/echo",
             content,
             TestContext.Current.CancellationToken
         );
@@ -104,7 +113,7 @@ public sealed class RouteHookTests : IDisposable
         );
 
         var response = await client.GetAsync(
-            "/stub/blocked",
+            "/qbittorrent/stub/blocked",
             TestContext.Current.CancellationToken
         );
 
@@ -137,7 +146,7 @@ public sealed class RouteHookTests : IDisposable
         );
 
         await client.GetAsync(
-            "/stub/scoped?mode=test&apikey=secret",
+            "/qbittorrent/stub/scoped?mode=test&apikey=secret",
             TestContext.Current.CancellationToken
         );
 
@@ -147,7 +156,7 @@ public sealed class RouteHookTests : IDisposable
         );
         Assert.Equal("stub", nested.Fields["Instance"]);
         Assert.Equal("GET", nested.Fields["Method"]);
-        Assert.Equal("/stub/scoped", nested.Fields["Path"]);
+        Assert.Equal("/qbittorrent/stub/scoped", nested.Fields["Path"]);
         Assert.Equal("?mode=test&apikey=REDACTED", nested.Fields["Query"]);
     }
 
@@ -169,7 +178,7 @@ public sealed class RouteHookTests : IDisposable
             )
         );
 
-        await client.GetAsync("/stub/info", TestContext.Current.CancellationToken);
+        await client.GetAsync("/qbittorrent/stub/info", TestContext.Current.CancellationToken);
 
         var received = Assert.Single(_upstream.LogEntries)!;
         Assert.Equal("injected", received.RequestMessage!.Headers!["X-Proxyarr"].Single());
@@ -202,7 +211,7 @@ public sealed class RouteHookTests : IDisposable
         );
 
         var response = await client.GetAsync(
-            "/stub/version",
+            "/qbittorrent/stub/version",
             TestContext.Current.CancellationToken
         );
 
@@ -226,7 +235,7 @@ public sealed class RouteHookTests : IDisposable
         );
 
         var body = await client.GetStringAsync(
-            "/stub/local/status",
+            "/qbittorrent/stub/local/status",
             TestContext.Current.CancellationToken
         );
 
@@ -245,7 +254,7 @@ public sealed class RouteHookTests : IDisposable
 
     private sealed class StubAdapter(IReadOnlyList<ProxyRoute> routes) : IDownloadClientAdapter
     {
-        public string Type => "stub";
+        public string Type => "qbittorrent";
 
         public IReadOnlyList<ProxyRoute> GetRoutes(
             Proxyarr.Configuration.ClientInstanceConfig instance

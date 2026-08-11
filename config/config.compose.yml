@@ -6,27 +6,30 @@ logging:
   level: debug
 
 # Two qBittorrent-pointing prefixes form a dedup group against the one
-# qBittorrent, so adding the same torrent through both /radarr-qbit and
-# /sonarr-qbit lands a single torrent tagged with both instance names.
+# qBittorrent, so adding the same torrent through /qbittorrent/radarr and
+# /qbittorrent/sonarr lands a single torrent tagged with both instance names.
 clients:
-  - name: qbittorrent
-    type: qbittorrent
-    upstream: http://qbittorrent:8080
+  qbittorrent:
+    upstreams:
+      - name: main
+        url: http://qbittorrent:8080
+    groups:
+      - name: shared
+        category: proxyarr
+    instances:
+      - name: direct
+        upstream: main
+      - name: radarr
+        upstream: main
+        group: shared
+      - name: sonarr
+        upstream: main
+        group: shared
 
-  - name: radarr-qbit
-    type: qbittorrent
-    upstream: http://qbittorrent:8080
-    dedupe:
-      enabled: true
-      category: proxyarr
-
-  - name: sonarr-qbit
-    type: qbittorrent
-    upstream: http://qbittorrent:8080
-    dedupe:
-      enabled: true
-      category: proxyarr
-
-  - name: sabnzbd
-    type: sabnzbd
-    upstream: http://sabnzbd:8080
+  sabnzbd:
+    upstreams:
+      - name: main
+        url: http://sabnzbd:8080
+    instances:
+      - name: direct
+        upstream: main

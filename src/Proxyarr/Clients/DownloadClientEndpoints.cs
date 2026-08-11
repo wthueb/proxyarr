@@ -79,8 +79,8 @@ public static class DownloadClientEndpoints
     }
 
     /// <summary>
-    /// Maps every configured client instance under its <c>/{name}</c> prefix, exposing only the
-    /// routes its adapter declares.
+    /// Maps every configured client instance under its <c>/{type}/{name}</c> prefix, exposing only
+    /// the routes its adapter declares.
     /// </summary>
     public static WebApplication MapDownloadClients(this WebApplication app)
     {
@@ -95,7 +95,7 @@ public static class DownloadClientEndpoints
         // Initialize the SABnzbd claim store up front (runs migrations) so a bad database path fails
         // at startup rather than on the first NZB add.
         if (
-            config.Clients.Any(instance =>
+            config.ResolvedClients.Any(instance =>
                 instance.Type.Equals("sabnzbd", StringComparison.OrdinalIgnoreCase)
                 && instance.DedupeEnabled
             )
@@ -107,7 +107,7 @@ public static class DownloadClientEndpoints
                 .GetResult();
         }
 
-        foreach (var instance in config.Clients)
+        foreach (var instance in config.ResolvedClients)
         {
             if (!adapters.TryGetValue(instance.Type, out var adapter))
             {
@@ -154,13 +154,13 @@ public static class DownloadClientEndpoints
         ILogger requestLogger
     )
     {
-        var prefix = new PathString($"/{instance.Name}");
+        var prefix = new PathString($"/{adapter.Type}/{instance.Name}");
         var passThroughTransformer = new PrefixStripTransformer(prefix);
         var routes = adapter.GetRoutes(instance);
 
         foreach (var route in routes)
         {
-            var pattern = $"/{instance.Name}{route.Pattern}";
+            var pattern = $"{prefix}{route.Pattern}";
 
             if (route.Handle is { } handle)
             {

@@ -35,7 +35,7 @@ public sealed class Claim
 {
     public int JobId { get; set; }
 
-    /// <summary>The proxyarr instance (URL prefix) that holds this claim.</summary>
+    /// <summary>The proxyarr instance name that holds this claim.</summary>
     public string Instance { get; set; } = "";
 
     /// <summary>The category the instance sent at add time, echoed back in listing responses.</summary>

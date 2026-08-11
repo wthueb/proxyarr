@@ -3,7 +3,7 @@ using Yarp.ReverseProxy.Forwarder;
 namespace Proxyarr.Forwarding;
 
 /// <summary>
-/// Rewrites <c>/{instance-name}/some/path</c> to <c>{upstream}/some/path</c> while keeping the
+/// Rewrites <c>/{type}/{instance-name}/some/path</c> to <c>{upstream}/some/path</c> while keeping the
 /// query string and (via the base transformer) all headers and the body intact. The Host header is
 /// set to the upstream's authority, which keeps qBittorrent's host header validation happy.
 /// Optional per-route transforms run on top: <paramref name="transformRequest"/> after the URI

@@ -29,32 +29,27 @@ public sealed class QBittorrentDedupeIntegrationTests
         _factory = new ProxyAppFactory(
             $"""
             clients:
-              - name: radarr1
-                type: qbittorrent
-                upstream: {_upstreamUrl}
-                dedupe:
-                  enabled: true
-                  category: {Category}
-                  group: main
-              - name: radarr2
-                type: qbittorrent
-                upstream: {_upstreamUrl}
-                dedupe:
-                  enabled: true
-                  category: {Category}
-                  group: main
-              - name: sonarr1
-                type: qbittorrent
-                upstream: {_upstreamUrl}
-                dedupe:
-                  enabled: true
-                  group: nocat
-              - name: sonarr2
-                type: qbittorrent
-                upstream: {_upstreamUrl}
-                dedupe:
-                  enabled: true
-                  group: nocat
+              qbittorrent:
+                upstreams:
+                  - name: main
+                    url: {_upstreamUrl}
+                groups:
+                  - name: main
+                    category: {Category}
+                  - name: nocat
+                instances:
+                  - name: radarr1
+                    upstream: main
+                    group: main
+                  - name: radarr2
+                    upstream: main
+                    group: main
+                  - name: sonarr1
+                    upstream: main
+                    group: nocat
+                  - name: sonarr2
+                    upstream: main
+                    group: nocat
             """
         );
         _client = _factory.CreateClient();
@@ -185,14 +180,18 @@ public sealed class QBittorrentDedupeIntegrationTests
             form.Add(new StringContent(value), key);
         }
 
-        var response = await Client.PostAsync($"/{prefix}/api/v2/torrents/add", form, ct);
+        var response = await Client.PostAsync(
+            $"/qbittorrent/{prefix}/api/v2/torrents/add",
+            form,
+            ct
+        );
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
     }
 
     private async Task CreateCategory(string prefix, string category, CancellationToken ct)
     {
         var response = await Client.PostAsync(
-            $"/{prefix}/api/v2/torrents/createCategory",
+            $"/qbittorrent/{prefix}/api/v2/torrents/createCategory",
             Form(("category", category)),
             ct
         );
@@ -207,7 +206,7 @@ public sealed class QBittorrentDedupeIntegrationTests
     )
     {
         var response = await Client.PostAsync(
-            $"/{prefix}/api/v2/torrents/delete",
+            $"/qbittorrent/{prefix}/api/v2/torrents/delete",
             Form(("hashes", hash), ("deleteFiles", deleteFiles ? "true" : "false")),
             ct
         );
@@ -222,7 +221,7 @@ public sealed class QBittorrentDedupeIntegrationTests
     )
     {
         var json = await Client.GetStringAsync(
-            $"/{prefix}/api/v2/torrents/info?category={category}",
+            $"/qbittorrent/{prefix}/api/v2/torrents/info?category={category}",
             ct
         );
         using var doc = JsonDocument.Parse(json);

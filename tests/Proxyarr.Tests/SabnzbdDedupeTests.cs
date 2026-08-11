@@ -31,22 +31,23 @@ public sealed class SabnzbdDedupeTests : IDisposable
             $"""
             database: {_dbPath}
             clients:
-              - name: sab1
-                type: sabnzbd
-                upstream: {_upstream.Url}
-                dedupe:
-                  enabled: true
-                  category: proxyarr
-                  announce_categories: [ann-a, ann-b]
-              - name: sab2
-                type: sabnzbd
-                upstream: {_upstream.Url}
-                dedupe:
-                  enabled: true
-                  category: proxyarr
-              - name: plain
-                type: sabnzbd
-                upstream: {_upstream.Url}
+              sabnzbd:
+                upstreams:
+                  - name: main
+                    url: {_upstream.Url}
+                groups:
+                  - name: shared
+                    category: proxyarr
+                    announce_categories: [ann-a, ann-b]
+                instances:
+                  - name: sab1
+                    upstream: main
+                    group: shared
+                  - name: sab2
+                    upstream: main
+                    group: shared
+                  - name: plain
+                    upstream: main
             """
         );
         _client = _factory.CreateClient(new() { AllowAutoRedirect = false, HandleCookies = false });
@@ -95,7 +96,7 @@ public sealed class SabnzbdDedupeTests : IDisposable
         await AddNzb("sab1", Nzb("cat@seg"), "movies");
 
         var forwarded = Requests("addfile").Single().RequestMessage!;
-        Assert.Equal("proxyarr", forwarded.Query!["cat"].Single()); // dedupe.category, not "movies"
+        Assert.Equal("proxyarr", forwarded.Query!["cat"].Single()); // group category, not "movies"
     }
 
     [Fact]
@@ -215,7 +216,7 @@ public sealed class SabnzbdDedupeTests : IDisposable
             { new ByteArrayContent(nzb), "name", "test.nzb" },
         };
         return await _client.PostAsync(
-            $"/{prefix}/api?mode=addfile&cat={category}&apikey=k&output=json",
+            $"/sabnzbd/{prefix}/api?mode=addfile&cat={category}&apikey=k&output=json",
             content,
             Ct
         );
@@ -223,7 +224,7 @@ public sealed class SabnzbdDedupeTests : IDisposable
 
     private async Task<JsonDocument> GetJson(string prefix, string query)
     {
-        var body = await _client.GetStringAsync($"/{prefix}/api?{query}&output=json", Ct);
+        var body = await _client.GetStringAsync($"/sabnzbd/{prefix}/api?{query}&output=json", Ct);
         return JsonDocument.Parse(body);
     }
 

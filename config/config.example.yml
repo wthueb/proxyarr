@@ -8,8 +8,8 @@ server:
   port: 8484
 
 # SQLite database backing SABnzbd dedup (see below). Optional; defaults to
-# proxyarr.db next to this config file. Only touched when a sabnzbd client
-# has dedupe enabled.
+# proxyarr.db next to this config file. Only touched when a sabnzbd instance
+# references a group.
 # database: /config/proxyarr.db
 
 logging:
@@ -24,55 +24,59 @@ logging:
   #  Microsoft.AspNetCore: information
 
 clients:
-  - name: qbittorrent1
-    type: qbittorrent
-    upstream: http://localhost:8080
+  qbittorrent:
+    upstreams:
+      - name: main
+        url: http://localhost:8080
 
-  - name: qbittorrent2
-    type: qbittorrent
-    upstream: http://localhost:8081
+    # Instances in the same named group share downloads. The group's category
+    # is the real category used in qBittorrent.
+    groups:
+      - name: radarr
+        category: radarr
+      - name: sonarr
+        category: sonarr
 
-  - name: sabnzbd
-    type: sabnzbd
-    upstream: http://localhost:8085/sabnzbd
+    instances:
+      - name: radarr # URL Base: /qbittorrent/radarr
+        upstream: main
+        group: radarr
+      - name: radarr4k # URL Base: /qbittorrent/radarr4k
+        upstream: main
+        group: radarr
+      - name: sonarr # URL Base: /qbittorrent/sonarr
+        upstream: main
+        group: sonarr
+      - name: sonarr4k # URL Base: /qbittorrent/sonarr4k
+        upstream: main
+        group: sonarr
 
-# ---------------------------------------------------------------------------
-# Cross-instance download deduplication (opt-in per instance)
-#
-# Point several Radarr/Sonarr instances at ONE qBittorrent (or ONE SABnzbd)
-# through separate proxyarr prefixes. When more than one grabs the same
-# release, proxyarr adds it upstream only once and shares it, instead of the
-# instances fighting over qBittorrent's single-category-per-torrent model or
-# double-downloading the NZB.
-#
-# Instances of the same type sharing an upstream URL are grouped
-# automatically; ownership is tracked by the proxyarr instance name — as a
-# qBittorrent tag per torrent, or a SABnzbd claim row in the database.
-# ---------------------------------------------------------------------------
-#
-#   - name: radarr-qbit          # one prefix per *arr, all pointing at the
-#     type: qbittorrent          # same qBittorrent
-#     upstream: http://localhost:8080
-#     dedupe:
-#       enabled: true            # required to turn any dedupe option on
-#       category: proxyarr       # real category assigned upstream; omit to add
-#                                # content with NO category at all
-#       # group: main            # optional; only needed to force-group two
-#                                # instances reachable via different hostnames
-#
-#   - name: sonarr-qbit
-#     type: qbittorrent
-#     upstream: http://localhost:8080
-#     dedupe:
-#       enabled: true
-#       category: proxyarr       # all members of a group must agree on this
-#
-#   - name: radarr-sab
-#     type: sabnzbd
-#     upstream: http://localhost:8085/sabnzbd
-#     dedupe:
-#       enabled: true
-#       category: proxyarr
-#       announce_categories:     # sabnzbd only: extra category names to report
-#         - movies               # as existing so the *arr's category check passes
-#         - tv
+  sabnzbd:
+    upstreams:
+      - name: main
+        url: http://localhost:8085/sabnzbd
+
+    groups:
+      - name: radarr
+        category: radarr
+        # Extra category names to report as existing to Radarr.
+        announce_categories: [movies, movies-4k]
+      - name: sonarr
+        category: sonarr
+        announce_categories: [tv, tv-4k]
+
+    instances:
+      - name: radarr # URL Base: /sabnzbd/radarr
+        upstream: main
+        group: radarr
+      - name: radarr4k # URL Base: /sabnzbd/radarr4k
+        upstream: main
+        group: radarr
+      - name: sonarr # URL Base: /sabnzbd/sonarr
+        upstream: main
+        group: sonarr
+      - name: sonarr4k # URL Base: /sabnzbd/sonarr4k
+        upstream: main
+        group: sonarr
+
+# Omit an instance's `group` to make that instance a byte-identical pass-through.

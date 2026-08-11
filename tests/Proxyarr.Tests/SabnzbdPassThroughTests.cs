@@ -23,9 +23,13 @@ public sealed class SabnzbdPassThroughTests : IDisposable
         _factory = new ProxyAppFactory(
             $"""
             clients:
-              - name: sab
-                type: sabnzbd
-                upstream: {_upstream.Url}
+              sabnzbd:
+                upstreams:
+                  - name: main
+                    url: {_upstream.Url}
+                instances:
+                  - name: sab
+                    upstream: main
             """
         );
         _client = _factory.CreateClient(new() { AllowAutoRedirect = false, HandleCookies = false });
@@ -53,7 +57,7 @@ public sealed class SabnzbdPassThroughTests : IDisposable
             .RespondWith(Response.Create().WithStatusCode(200).WithBody("""{"status": true}"""));
 
         var response = await _client.GetAsync(
-            $"/sab/api?mode={mode}&apikey=secret-key&output=json",
+            $"/sabnzbd/sab/api?mode={mode}&apikey=secret-key&output=json",
             TestContext.Current.CancellationToken
         );
 
@@ -86,7 +90,7 @@ public sealed class SabnzbdPassThroughTests : IDisposable
         form.Add(new StringContent("<nzb>fake-nzb-content</nzb>"), "name", "movie.nzb");
 
         var response = await _client.PostAsync(
-            "/sab/api?mode=addfile&cat=movies&priority=-100&apikey=secret-key&output=json",
+            "/sabnzbd/sab/api?mode=addfile&cat=movies&priority=-100&apikey=secret-key&output=json",
             form,
             TestContext.Current.CancellationToken
         );
@@ -114,7 +118,7 @@ public sealed class SabnzbdPassThroughTests : IDisposable
             .RespondWith(Response.Create().WithStatusCode(200).WithBody("""{"status": true}"""));
 
         await _client.GetAsync(
-            "/sab/api?mode=queue&name=delete&del_files=1&value=SABnzbd_nzo_abc123&apikey=k&output=json",
+            "/sabnzbd/sab/api?mode=queue&name=delete&del_files=1&value=SABnzbd_nzo_abc123&apikey=k&output=json",
             TestContext.Current.CancellationToken
         );
 
@@ -132,7 +136,7 @@ public sealed class SabnzbdPassThroughTests : IDisposable
     public async Task Modes_outside_the_allow_list_are_rejected_without_forwarding(string mode)
     {
         var response = await _client.GetAsync(
-            $"/sab/api?mode={mode}&apikey=secret-key",
+            $"/sabnzbd/sab/api?mode={mode}&apikey=secret-key",
             TestContext.Current.CancellationToken
         );
 
@@ -149,7 +153,7 @@ public sealed class SabnzbdPassThroughTests : IDisposable
     public async Task Missing_mode_is_rejected_without_forwarding()
     {
         var response = await _client.GetAsync(
-            "/sab/api?apikey=secret-key",
+            "/sabnzbd/sab/api?apikey=secret-key",
             TestContext.Current.CancellationToken
         );
 
@@ -161,7 +165,7 @@ public sealed class SabnzbdPassThroughTests : IDisposable
     public async Task Paths_other_than_api_are_not_forwarded()
     {
         var response = await _client.GetAsync(
-            "/sab/sabnzbd/config/general/",
+            "/sabnzbd/sab/sabnzbd/config/general/",
             TestContext.Current.CancellationToken
         );
 

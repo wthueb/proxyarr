@@ -34,9 +34,13 @@ public sealed class SabnzbdIntegrationTests : IClassFixture<SabnzbdContainerFixt
         _factory = new ProxyAppFactory(
             $"""
             clients:
-              - name: sab
-                type: sabnzbd
-                upstream: {sabnzbd.UpstreamUrl}
+              sabnzbd:
+                upstreams:
+                  - name: main
+                    url: {sabnzbd.UpstreamUrl}
+                instances:
+                  - name: sab
+                    upstream: main
             """
         );
         _client = _factory.CreateClient();
@@ -106,7 +110,7 @@ public sealed class SabnzbdIntegrationTests : IClassFixture<SabnzbdContainerFixt
         form.Add(nzbContent, "name", "proxyarr-test.nzb");
 
         var add = await Client.PostAsync(
-            $"/sab/api?mode=addfile&cat=movies&priority=-2&apikey={ApiKey}&output=json",
+            $"/sabnzbd/sab/api?mode=addfile&cat=movies&priority=-2&apikey={ApiKey}&output=json",
             form,
             ct
         );
@@ -163,7 +167,7 @@ public sealed class SabnzbdIntegrationTests : IClassFixture<SabnzbdContainerFixt
     private async Task<bool> FindJobAsync(string source, string nzoId, CancellationToken ct)
     {
         var json = await Client.GetStringAsync(
-            $"/sab/api?mode={source}&start=0&limit=100&apikey={ApiKey}&output=json",
+            $"/sabnzbd/sab/api?mode={source}&start=0&limit=100&apikey={ApiKey}&output=json",
             ct
         );
 
@@ -178,7 +182,7 @@ public sealed class SabnzbdIntegrationTests : IClassFixture<SabnzbdContainerFixt
     private async Task<JsonDocument> GetJsonAsync(string query)
     {
         var json = await Client.GetStringAsync(
-            $"/sab/api?{query}&output=json",
+            $"/sabnzbd/sab/api?{query}&output=json",
             TestContext.Current.CancellationToken
         );
         return JsonDocument.Parse(json);

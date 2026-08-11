@@ -1,3 +1,5 @@
+using YamlDotNet.Serialization;
+
 namespace Proxyarr.Configuration;
 
 /// <summary>Root of the YAML configuration file.</summary>
@@ -7,14 +9,68 @@ public sealed class ProxyConfig
 
     public LoggingConfig Logging { get; set; } = new();
 
-    public List<ClientInstanceConfig> Clients { get; set; } = [];
+    public ClientsConfig Clients { get; set; } = new();
+
+    /// <summary>Validated runtime instances resolved from the named client configuration.</summary>
+    [YamlIgnore]
+    public IReadOnlyList<ClientInstanceConfig> ResolvedClients { get; internal set; } = [];
 
     /// <summary>
     /// Path to the SQLite database that backs SABnzbd cross-instance dedup. Optional; defaults to
     /// <c>proxyarr.db</c> next to the config file (set in <c>Program</c>). Only used when at least
-    /// one sabnzbd client has dedupe enabled.
+    /// one sabnzbd instance references a group.
     /// </summary>
     public string? Database { get; set; }
+}
+
+/// <summary>Download-client configuration grouped by adapter type.</summary>
+public sealed class ClientsConfig
+{
+    public ClientTypeConfig Qbittorrent { get; set; } = new();
+
+    public ClientTypeConfig Sabnzbd { get; set; } = new();
+}
+
+/// <summary>Named upstreams, dedupe groups, and routed instances for one client type.</summary>
+public sealed class ClientTypeConfig
+{
+    public List<ClientUpstreamConfig> Upstreams { get; set; } = [];
+
+    public List<ClientGroupConfig> Groups { get; set; } = [];
+
+    public List<ClientInstanceSpec> Instances { get; set; } = [];
+}
+
+public sealed class ClientUpstreamConfig
+{
+    public string Name { get; set; } = "";
+
+    public string Url { get; set; } = "";
+}
+
+public sealed class ClientGroupConfig
+{
+    public string Name { get; set; } = "";
+
+    /// <summary>The real category assigned to downloads shared by this group.</summary>
+    public string? Category { get; set; }
+
+    /// <summary>SABnzbd category names to inject into its <c>get_config</c> response.</summary>
+    public List<string>? AnnounceCategories { get; set; }
+}
+
+public sealed class ClientInstanceSpec
+{
+    public string Name { get; set; } = "";
+
+    /// <summary>Name of an entry in the client type's <c>upstreams</c> list.</summary>
+    public string Upstream { get; set; } = "";
+
+    /// <summary>
+    /// Optional name of an entry in the client type's <c>groups</c> list. Setting this implicitly
+    /// enables dedupe; omitting it makes the instance a pass-through.
+    /// </summary>
+    public string? Group { get; set; }
 }
 
 public sealed class LoggingConfig
@@ -69,12 +125,15 @@ public sealed class ServerConfig
 }
 
 /// <summary>
-/// One proxied download client instance. Requests to <c>/{name}/...</c> are forwarded to
+/// One proxied download client instance. Requests to <c>/{type}/{name}/...</c> are forwarded to
 /// <see cref="Upstream"/>, restricted to the endpoints declared by the adapter for <see cref="Type"/>.
 /// </summary>
 public sealed class ClientInstanceConfig
 {
-    /// <summary>Route prefix for this instance. In Radarr, set the client's "URL Base" to <c>/{name}</c>.</summary>
+    /// <summary>
+    /// Name within the client type's route namespace. In Radarr, set the client's "URL Base" to
+    /// <c>/{type}/{name}</c>.
+    /// </summary>
     public string Name { get; set; } = "";
 
     /// <summary>Adapter type, e.g. <c>qbittorrent</c> or <c>sabnzbd</c>.</summary>
@@ -93,31 +152,24 @@ public sealed class ClientInstanceConfig
     public DedupeConfig? Dedupe { get; set; }
 
     /// <summary>Whether this instance participates in cross-instance dedup.</summary>
-    public bool DedupeEnabled => Dedupe is { Enabled: true };
+    public bool DedupeEnabled => Dedupe is not null;
 }
 
 /// <summary>
-/// Per-instance cross-instance deduplication settings. Instances of the same client type that share
-/// a normalized upstream URL (or an explicit <see cref="Group"/>) form a dedup group: a release
-/// grabbed by several of them is downloaded once and shared, tracked by the proxy instance name.
+/// Resolved per-instance cross-instance deduplication settings. Instances that reference the same
+/// named group form a dedupe group: a release grabbed by several of them is downloaded once and
+/// shared, tracked by the proxy instance name.
 /// </summary>
 public sealed class DedupeConfig
 {
-    /// <summary>Master switch. When false, the instance is a plain pass-through and the other keys must be unset.</summary>
-    public bool Enabled { get; set; }
-
     /// <summary>
     /// The real qBittorrent/SABnzbd category assigned to shared downloads. When unset, content is
     /// added with no category at all (the category the *arr sends is never forwarded upstream).
     /// </summary>
     public string? Category { get; set; }
 
-    /// <summary>
-    /// Optional override that forces this instance into a named group. Groups are normally derived
-    /// automatically from the upstream URL; this is only for exotic setups where one client is
-    /// reachable via two hostnames.
-    /// </summary>
-    public string? Group { get; set; }
+    /// <summary>The configured group name.</summary>
+    public string Group { get; set; } = "";
 
     /// <summary>
     /// SABnzbd only: category names to inject into the <c>get_config</c> response so Radarr's

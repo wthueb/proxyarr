@@ -24,9 +24,13 @@ public sealed class QBittorrentPassThroughTests : IDisposable
         _factory = new ProxyAppFactory(
             $"""
             clients:
-              - name: qbit
-                type: qbittorrent
-                upstream: {_upstream.Url}
+              qbittorrent:
+                upstreams:
+                  - name: main
+                    url: {_upstream.Url}
+                instances:
+                  - name: qbit
+                    upstream: main
             """
         );
         _client = _factory.CreateClient(new() { AllowAutoRedirect = false, HandleCookies = false });
@@ -62,7 +66,10 @@ public sealed class QBittorrentPassThroughTests : IDisposable
             .Given(Request.Create().WithPath(path).UsingMethod(method))
             .RespondWith(Response.Create().WithStatusCode(200).WithBody("upstream-response"));
 
-        using var request = new HttpRequestMessage(HttpMethod.Parse(method), $"/qbit{path}");
+        using var request = new HttpRequestMessage(
+            HttpMethod.Parse(method),
+            $"/qbittorrent/qbit{path}"
+        );
         if (method == "POST")
         {
             request.Content = new FormUrlEncodedContent([]);
@@ -94,7 +101,7 @@ public sealed class QBittorrentPassThroughTests : IDisposable
             );
 
         var response = await _client.PostAsync(
-            "/qbit/api/v2/auth/login",
+            "/qbittorrent/qbit/api/v2/auth/login",
             new FormUrlEncodedContent(
                 new Dictionary<string, string> { ["username"] = "admin", ["password"] = "secret" }
             ),
@@ -120,7 +127,10 @@ public sealed class QBittorrentPassThroughTests : IDisposable
             .Given(Request.Create().WithPath("/api/v2/torrents/info").UsingGet())
             .RespondWith(Response.Create().WithStatusCode(200).WithBody("[]"));
 
-        using var request = new HttpRequestMessage(HttpMethod.Get, "/qbit/api/v2/torrents/info");
+        using var request = new HttpRequestMessage(
+            HttpMethod.Get,
+            "/qbittorrent/qbit/api/v2/torrents/info"
+        );
         request.Headers.Add("Cookie", "SID=abc123sessionid");
 
         var response = await _client.SendAsync(request, TestContext.Current.CancellationToken);
@@ -138,7 +148,7 @@ public sealed class QBittorrentPassThroughTests : IDisposable
             .RespondWith(Response.Create().WithStatusCode(200).WithBody("[]"));
 
         await _client.GetAsync(
-            "/qbit/api/v2/torrents/info?category=radarr&hashes=abcd1234",
+            "/qbittorrent/qbit/api/v2/torrents/info?category=radarr&hashes=abcd1234",
             TestContext.Current.CancellationToken
         );
 
@@ -164,7 +174,7 @@ public sealed class QBittorrentPassThroughTests : IDisposable
         form.Add(new StringContent("true"), "stopped");
 
         var response = await _client.PostAsync(
-            "/qbit/api/v2/torrents/add",
+            "/qbittorrent/qbit/api/v2/torrents/add",
             form,
             TestContext.Current.CancellationToken
         );
@@ -190,7 +200,7 @@ public sealed class QBittorrentPassThroughTests : IDisposable
             .RespondWith(Response.Create().WithStatusCode(403).WithBody("Forbidden"));
 
         var response = await _client.GetAsync(
-            "/qbit/api/v2/torrents/info",
+            "/qbittorrent/qbit/api/v2/torrents/info",
             TestContext.Current.CancellationToken
         );
 
@@ -209,7 +219,10 @@ public sealed class QBittorrentPassThroughTests : IDisposable
     [InlineData("GET", "/query/torrents")] // API v1, unsupported
     public async Task Endpoints_outside_the_allow_list_are_not_forwarded(string method, string path)
     {
-        using var request = new HttpRequestMessage(HttpMethod.Parse(method), $"/qbit{path}");
+        using var request = new HttpRequestMessage(
+            HttpMethod.Parse(method),
+            $"/qbittorrent/qbit{path}"
+        );
         if (method == "POST")
         {
             request.Content = new FormUrlEncodedContent([]);
@@ -225,7 +238,7 @@ public sealed class QBittorrentPassThroughTests : IDisposable
     public async Task Wrong_methods_are_rejected_without_forwarding()
     {
         var response = await _client.GetAsync(
-            "/qbit/api/v2/torrents/delete",
+            "/qbittorrent/qbit/api/v2/torrents/delete",
             TestContext.Current.CancellationToken
         );
 

@@ -34,20 +34,20 @@ public sealed class SabnzbdDedupeIntegrationTests
             $"""
             database: {_dbPath}
             clients:
-              - name: sab1
-                type: sabnzbd
-                upstream: {_upstreamUrl}
-                dedupe:
-                  enabled: true
-                  category: proxyarr-it
-                  group: main
-              - name: sab2
-                type: sabnzbd
-                upstream: {_upstreamUrl}
-                dedupe:
-                  enabled: true
-                  category: proxyarr-it
-                  group: main
+              sabnzbd:
+                upstreams:
+                  - name: main
+                    url: {_upstreamUrl}
+                groups:
+                  - name: main
+                    category: proxyarr-it
+                instances:
+                  - name: sab1
+                    upstream: main
+                    group: main
+                  - name: sab2
+                    upstream: main
+                    group: main
             """
         );
         _client = _factory.CreateClient();
@@ -127,7 +127,7 @@ public sealed class SabnzbdDedupeIntegrationTests
 
         // priority=-2 (paused) keeps the job parked: the container has no Usenet servers.
         var response = await Client.PostAsync(
-            $"/{prefix}/api?mode=addfile&cat={category}&priority=-2&apikey={ApiKey}&output=json",
+            $"/sabnzbd/{prefix}/api?mode=addfile&cat={category}&priority=-2&apikey={ApiKey}&output=json",
             form,
             ct
         );
@@ -143,7 +143,7 @@ public sealed class SabnzbdDedupeIntegrationTests
         // The job lands in queue or (if SAB fails it immediately) history; try both.
         var mode = await RawJobLocationAsync(nzoId, ct) ?? "queue";
         var response = await Client.GetStringAsync(
-            $"/{prefix}/api?mode={mode}&name=delete&value={nzoId}&del_files=1&apikey={ApiKey}&output=json",
+            $"/sabnzbd/{prefix}/api?mode={mode}&name=delete&value={nzoId}&del_files=1&apikey={ApiKey}&output=json",
             ct
         );
         using var json = JsonDocument.Parse(response);
@@ -165,7 +165,7 @@ public sealed class SabnzbdDedupeIntegrationTests
         )
         {
             var json = await Client.GetStringAsync(
-                $"/{prefix}/api?mode={mode}&apikey={ApiKey}&output=json",
+                $"/sabnzbd/{prefix}/api?mode={mode}&apikey={ApiKey}&output=json",
                 ct
             );
             using var doc = JsonDocument.Parse(json);

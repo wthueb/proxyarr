@@ -10,8 +10,8 @@ namespace Proxyarr.Tests;
 
 /// <summary>
 /// Unit coverage for qBittorrent cross-instance dedup, driving the real proxy against a WireMock
-/// fake qBittorrent. Two instances (radarr1/radarr2) point at the same upstream URL, so they form
-/// one dedup group in-process — the same shape as two *arrs grabbing the same release.
+/// fake qBittorrent. Two instances (radarr1/radarr2) reference the same named dedupe group — the
+/// same shape as two *arrs grabbing the same release.
 /// </summary>
 public sealed class QBittorrentDedupeTests : IDisposable
 {
@@ -41,29 +41,31 @@ public sealed class QBittorrentDedupeTests : IDisposable
 
     private HttpClient Boot(string? category = "proxyarr", bool withPlainInstance = false)
     {
-        var categoryLine = category is null ? "" : $"\n      category: {category}";
         var plain = withPlainInstance
-            ? $"""
+            ? """
 
-                  - name: plain
-                    type: qbittorrent
-                    upstream: {_upstream.Url}
+                      - name: plain
+                        upstream: main
                 """
             : "";
 
         _factory = new ProxyAppFactory(
             $"""
             clients:
-              - name: radarr1
-                type: qbittorrent
-                upstream: {_upstream.Url}
-                dedupe:
-                  enabled: true{categoryLine}
-              - name: radarr2
-                type: qbittorrent
-                upstream: {_upstream.Url}
-                dedupe:
-                  enabled: true{categoryLine}{plain}
+              qbittorrent:
+                upstreams:
+                  - name: main
+                    url: {_upstream.Url}
+                groups:
+                  - name: shared
+                    category: {category}
+                instances:
+                  - name: radarr1
+                    upstream: main
+                    group: shared
+                  - name: radarr2
+                    upstream: main
+                    group: shared{plain}
             """
         );
         _client = _factory.CreateClient(new() { AllowAutoRedirect = false, HandleCookies = false });
@@ -96,7 +98,7 @@ public sealed class QBittorrentDedupeTests : IDisposable
         var addBody = Single(AddPath);
         Assert.Contains("tags", addBody);
         Assert.Contains("radarr1", addBody); // instance tag injected
-        Assert.Contains("proxyarr", addBody); // dedupe.category
+        Assert.Contains("proxyarr", addBody); // configured group category
         Assert.DoesNotContain("movies", addBody); // the *arr's category is never forwarded
         Assert.Contains("stopped", addBody);
         Assert.Contains("paused", addBody);
@@ -216,7 +218,7 @@ public sealed class QBittorrentDedupeTests : IDisposable
 
         using var request = new HttpRequestMessage(
             HttpMethod.Get,
-            "/radarr1/api/v2/torrents/info?category=movies"
+            "/qbittorrent/radarr1/api/v2/torrents/info?category=movies"
         );
         request.Headers.TryAddWithoutValidation("Accept-Encoding", "gzip");
         var response = await client.SendAsync(request, Ct);
@@ -247,12 +249,15 @@ public sealed class QBittorrentDedupeTests : IDisposable
 
         // Radarr creates its category first; the proxy remembers it locally.
         await client.PostAsync(
-            "/radarr1/api/v2/torrents/createCategory",
+            "/qbittorrent/radarr1/api/v2/torrents/createCategory",
             Form(("category", "movies")),
             Ct
         );
 
-        var categories = await client.GetStringAsync("/radarr1/api/v2/torrents/categories", Ct);
+        var categories = await client.GetStringAsync(
+            "/qbittorrent/radarr1/api/v2/torrents/categories",
+            Ct
+        );
         using var json = JsonDocument.Parse(categories);
         Assert.True(json.RootElement.TryGetProperty("movies", out var movies));
         Assert.Equal("movies", movies.GetProperty("name").GetString());
@@ -269,7 +274,7 @@ public sealed class QBittorrentDedupeTests : IDisposable
         StubPost(DeletePath);
 
         await client.PostAsync(
-            "/radarr1/api/v2/torrents/delete",
+            "/qbittorrent/radarr1/api/v2/torrents/delete",
             Form(("hashes", "h1"), ("deleteFiles", "true")),
             Ct
         );
@@ -296,7 +301,7 @@ public sealed class QBittorrentDedupeTests : IDisposable
         StubPost(DeletePath);
 
         await client.PostAsync(
-            "/radarr1/api/v2/torrents/delete",
+            "/qbittorrent/radarr1/api/v2/torrents/delete",
             Form(("hashes", "h1"), ("deleteFiles", "true")),
             Ct
         );
@@ -319,7 +324,7 @@ public sealed class QBittorrentDedupeTests : IDisposable
         StubPost(DeletePath);
 
         await client.PostAsync(
-            "/radarr1/api/v2/torrents/delete",
+            "/qbittorrent/radarr1/api/v2/torrents/delete",
             Form(("hashes", "h1"), ("deleteFiles", "false")),
             Ct
         );
@@ -344,7 +349,11 @@ public sealed class QBittorrentDedupeTests : IDisposable
         StubPost(RemoveTagsPath);
         StubPost(DeletePath);
 
-        await client.PostAsync("/radarr1/api/v2/torrents/delete", Form(("hashes", "h1")), Ct);
+        await client.PostAsync(
+            "/qbittorrent/radarr1/api/v2/torrents/delete",
+            Form(("hashes", "h1")),
+            Ct
+        );
 
         Assert.NotEmpty(Entries(PreferencesPath));
         Assert.Contains("deleteFiles=true", Single(DeletePath));
@@ -368,7 +377,7 @@ public sealed class QBittorrentDedupeTests : IDisposable
         StubPost(SetShareLimitsPath);
 
         await client.PostAsync(
-            "/radarr1/api/v2/torrents/setShareLimits",
+            "/qbittorrent/radarr1/api/v2/torrents/setShareLimits",
             Form(
                 ("hashes", "h1"),
                 ("ratioLimit", "2"),
@@ -396,7 +405,7 @@ public sealed class QBittorrentDedupeTests : IDisposable
         StubPost(AddTagsPath);
 
         await client.PostAsync(
-            "/radarr1/api/v2/torrents/setCategory",
+            "/qbittorrent/radarr1/api/v2/torrents/setCategory",
             Form(("hashes", "h1"), ("category", "imported")),
             Ct
         );
@@ -416,7 +425,7 @@ public sealed class QBittorrentDedupeTests : IDisposable
             .RespondWith(Response.Create().WithStatusCode(403).WithBody("Forbidden"));
 
         var response = await client.PostAsync(
-            "/radarr1/api/v2/torrents/delete",
+            "/qbittorrent/radarr1/api/v2/torrents/delete",
             Form(("hashes", "h1")),
             Ct
         );
@@ -461,7 +470,7 @@ public sealed class QBittorrentDedupeTests : IDisposable
             form.Add(new StringContent(value), key);
         }
 
-        return await client.PostAsync($"/{prefix}/api/v2/torrents/add", form, Ct);
+        return await client.PostAsync($"/qbittorrent/{prefix}/api/v2/torrents/add", form, Ct);
     }
 
     private void StubInfo(string body) =>

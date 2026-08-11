@@ -21,23 +21,23 @@ public sealed record DedupeGroup(string Key, IReadOnlyList<ClientInstanceConfig>
 }
 
 /// <summary>
-/// Derives dedup groups from a <see cref="ProxyConfig"/>. Two dedupe-enabled instances of the same
-/// client type land in the same group when they share a normalized upstream URL, or when both set
-/// the same explicit <see cref="DedupeConfig.Group"/> override. Registered as a singleton.
+/// Derives dedupe groups from a <see cref="ProxyConfig"/>. Instances of the same client type land
+/// in the same group when they reference the same named <see cref="DedupeConfig.Group"/>.
+/// Registered as a singleton.
 /// </summary>
 public sealed class DedupeGroups
 {
-    private readonly Dictionary<string, DedupeGroup> _byInstanceName;
+    private readonly Dictionary<string, DedupeGroup> _byInstance;
 
     private DedupeGroups(IReadOnlyList<DedupeGroup> groups)
     {
         All = groups;
-        _byInstanceName = new Dictionary<string, DedupeGroup>(StringComparer.OrdinalIgnoreCase);
+        _byInstance = new Dictionary<string, DedupeGroup>(StringComparer.OrdinalIgnoreCase);
         foreach (var group in groups)
         {
             foreach (var member in group.Members)
             {
-                _byInstanceName[member.Name] = group;
+                _byInstance[InstanceKey(member)] = group;
             }
         }
     }
@@ -47,14 +47,14 @@ public sealed class DedupeGroups
 
     /// <summary>The group the instance belongs to, or null when its dedupe is off.</summary>
     public DedupeGroup? For(ClientInstanceConfig instance) =>
-        _byInstanceName.GetValueOrDefault(instance.Name);
+        _byInstance.GetValueOrDefault(InstanceKey(instance));
 
     public static DedupeGroups Build(ProxyConfig config)
     {
         var byKey = new Dictionary<string, List<ClientInstanceConfig>>(StringComparer.Ordinal);
         var order = new List<string>();
 
-        foreach (var client in config.Clients)
+        foreach (var client in config.ResolvedClients)
         {
             if (!client.DedupeEnabled)
             {
@@ -76,23 +76,16 @@ public sealed class DedupeGroups
         return new DedupeGroups(groups);
     }
 
-    /// <summary>
-    /// Stable group identity: the explicit override when set, otherwise the normalized upstream URL,
-    /// always namespaced by client type so a qBittorrent and a SABnzbd on the same host never merge.
-    /// </summary>
+    /// <summary>Stable named-group identity, namespaced by client type.</summary>
     public static string GroupKey(ClientInstanceConfig client)
     {
         var type = client.Type.ToLowerInvariant();
-        var group = client.Dedupe?.Group;
-        return !string.IsNullOrWhiteSpace(group)
-            ? $"{type}|group:{group}"
-            : $"{type}|url:{NormalizeUpstream(client.Upstream)}";
+        var group =
+            client.Dedupe?.Group
+            ?? throw new InvalidOperationException($"Client '{client.Name}' is not in a group.");
+        return $"{type}|group:{group}";
     }
 
-    private static string NormalizeUpstream(string upstream)
-    {
-        var uri = new Uri(upstream);
-        var path = uri.AbsolutePath.TrimEnd('/');
-        return $"{uri.Scheme}://{uri.Host}:{uri.Port}{path}".ToLowerInvariant();
-    }
+    private static string InstanceKey(ClientInstanceConfig client) =>
+        $"{client.Type}|{client.Name}";
 }

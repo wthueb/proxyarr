@@ -38,7 +38,7 @@ public class LogfmtFormatterTests
     public void Emits_core_fields_in_logfmt()
     {
         var line = Format(
-            message: "Proxied qbit GET /qbit/api/v2/torrents/info -> 200 in 3.1ms",
+            message: "Proxied qbit GET /qbittorrent/qbit/api/v2/torrents/info -> 200 in 3.1ms",
             state:
             [
                 new("Instance", "qbit"),

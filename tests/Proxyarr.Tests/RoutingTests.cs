@@ -12,7 +12,7 @@ public class RoutingTests
     [Fact]
     public async Task Health_endpoint_responds_without_any_clients_configured()
     {
-        using var factory = new ProxyAppFactory("clients: []");
+        using var factory = new ProxyAppFactory("clients: {}");
         using var client = factory.CreateClient();
 
         var response = await client.GetAsync("/healthz", TestContext.Current.CancellationToken);
@@ -27,15 +27,63 @@ public class RoutingTests
     [Fact]
     public async Task Unknown_instance_prefixes_return_404()
     {
-        using var factory = new ProxyAppFactory("clients: []");
+        using var factory = new ProxyAppFactory("clients: {}");
         using var client = factory.CreateClient();
 
         var response = await client.GetAsync(
-            "/qbit/api/v2/app/version",
+            "/qbittorrent/qbit/api/v2/app/version",
             TestContext.Current.CancellationToken
         );
 
         Assert.Equal(HttpStatusCode.NotFound, response.StatusCode);
+    }
+
+    [Fact]
+    public async Task The_same_name_routes_independently_under_each_client_type()
+    {
+        using var upstream = WireMockServer.Start();
+        upstream
+            .Given(Request.Create().WithPath("/api/v2/app/version").UsingGet())
+            .RespondWith(Response.Create().WithBody("qBittorrent"));
+        upstream
+            .Given(Request.Create().WithPath("/api").WithParam("mode", "version").UsingGet())
+            .RespondWith(Response.Create().WithBody("SABnzbd"));
+
+        using var factory = new ProxyAppFactory(
+            $"""
+            clients:
+              qbittorrent:
+                upstreams:
+                  - name: main
+                    url: {upstream.Url}
+                instances:
+                  - name: radarr
+                    upstream: main
+              sabnzbd:
+                upstreams:
+                  - name: main
+                    url: {upstream.Url}
+                instances:
+                  - name: radarr
+                    upstream: main
+            """
+        );
+        using var client = factory.CreateClient();
+
+        Assert.Equal(
+            "qBittorrent",
+            await client.GetStringAsync(
+                "/qbittorrent/radarr/api/v2/app/version",
+                TestContext.Current.CancellationToken
+            )
+        );
+        Assert.Equal(
+            "SABnzbd",
+            await client.GetStringAsync(
+                "/sabnzbd/radarr/api?mode=version",
+                TestContext.Current.CancellationToken
+            )
+        );
     }
 
     [Fact]
@@ -53,12 +101,17 @@ public class RoutingTests
         using var factory = new ProxyAppFactory(
             $"""
             clients:
-              - name: qbit-movies
-                type: qbittorrent
-                upstream: {upstream1.Url}
-              - name: qbit-4k
-                type: qbittorrent
-                upstream: {upstream2.Url}
+              qbittorrent:
+                upstreams:
+                  - name: movies
+                    url: {upstream1.Url}
+                  - name: four-k
+                    url: {upstream2.Url}
+                instances:
+                  - name: qbit-movies
+                    upstream: movies
+                  - name: qbit-4k
+                    upstream: four-k
             """
         );
         using var client = factory.CreateClient();
@@ -66,14 +119,14 @@ public class RoutingTests
         Assert.Equal(
             "v5.2.3-instance-one",
             await client.GetStringAsync(
-                "/qbit-movies/api/v2/app/version",
+                "/qbittorrent/qbit-movies/api/v2/app/version",
                 TestContext.Current.CancellationToken
             )
         );
         Assert.Equal(
             "v5.2.3-instance-two",
             await client.GetStringAsync(
-                "/qbit-4k/api/v2/app/version",
+                "/qbittorrent/qbit-4k/api/v2/app/version",
                 TestContext.Current.CancellationToken
             )
         );
@@ -90,15 +143,19 @@ public class RoutingTests
         using var factory = new ProxyAppFactory(
             $"""
             clients:
-              - name: sab
-                type: sabnzbd
-                upstream: {upstream.Url}/sabnzbd
+              sabnzbd:
+                upstreams:
+                  - name: main
+                    url: {upstream.Url}/sabnzbd
+                instances:
+                  - name: sab
+                    upstream: main
             """
         );
         using var client = factory.CreateClient();
 
         var body = await client.GetStringAsync(
-            "/sab/api?mode=version",
+            "/sabnzbd/sab/api?mode=version",
             TestContext.Current.CancellationToken
         );
 
@@ -115,37 +172,22 @@ public class RoutingTests
         using var factory = new ProxyAppFactory(
             """
             clients:
-              - name: qbit
-                type: qbittorrent
-                upstream: http://127.0.0.1:9
+              qbittorrent:
+                upstreams:
+                  - name: main
+                    url: http://127.0.0.1:9
+                instances:
+                  - name: qbit
+                    upstream: main
             """
         );
         using var client = factory.CreateClient();
 
         var response = await client.GetAsync(
-            "/qbit/api/v2/app/version",
+            "/qbittorrent/qbit/api/v2/app/version",
             TestContext.Current.CancellationToken
         );
 
         Assert.Equal(HttpStatusCode.BadGateway, response.StatusCode);
-    }
-
-    [Fact]
-    public void Unknown_client_types_fail_at_startup()
-    {
-        using var factory = new ProxyAppFactory(
-            """
-            clients:
-              - name: mystery
-                type: rtorrent
-                upstream: http://localhost:8080
-            """
-        );
-
-        var ex = Assert.Throws<ConfigurationException>(() => factory.CreateClient());
-
-        Assert.Contains("rtorrent", ex.Message);
-        Assert.Contains("qbittorrent", ex.Message);
-        Assert.Contains("sabnzbd", ex.Message);
     }
 }

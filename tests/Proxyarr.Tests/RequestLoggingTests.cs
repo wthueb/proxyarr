@@ -29,12 +29,20 @@ public sealed class RequestLoggingTests : IDisposable
             logging:
               level: debug
             clients:
-              - name: qbit
-                type: qbittorrent
-                upstream: {_upstream.Url}
-              - name: sab
-                type: sabnzbd
-                upstream: {_upstream.Url}
+              qbittorrent:
+                upstreams:
+                  - name: main
+                    url: {_upstream.Url}
+                instances:
+                  - name: qbit
+                    upstream: main
+              sabnzbd:
+                upstreams:
+                  - name: main
+                    url: {_upstream.Url}
+                instances:
+                  - name: sab
+                    upstream: main
             """,
             _logs
         );
@@ -52,7 +60,10 @@ public sealed class RequestLoggingTests : IDisposable
     [Fact]
     public async Task Proxied_requests_emit_structured_completion_logs()
     {
-        await _client.GetAsync("/qbit/api/v2/app/version", TestContext.Current.CancellationToken);
+        await _client.GetAsync(
+            "/qbittorrent/qbit/api/v2/app/version",
+            TestContext.Current.CancellationToken
+        );
 
         var completion = Assert.Single(
             _logs.Events,
@@ -62,7 +73,7 @@ public sealed class RequestLoggingTests : IDisposable
         Assert.Equal("Proxyarr.Forwarding.UpstreamForwarder", completion.Category);
         Assert.Equal("qbit", completion.Fields["Instance"]);
         Assert.Equal("GET", completion.Fields["Method"]);
-        Assert.Equal("/qbit/api/v2/app/version", completion.Fields["Path"]);
+        Assert.Equal("/qbittorrent/qbit/api/v2/app/version", completion.Fields["Path"]);
         Assert.Equal(200, completion.Fields["StatusCode"]);
         Assert.True(completion.Fields.ContainsKey("ElapsedMs"));
     }
@@ -71,7 +82,7 @@ public sealed class RequestLoggingTests : IDisposable
     public async Task Sensitive_query_values_never_reach_the_logs()
     {
         await _client.GetAsync(
-            "/sab/api?mode=version&apikey=supersecretvalue",
+            "/sabnzbd/sab/api?mode=version&apikey=supersecretvalue",
             TestContext.Current.CancellationToken
         );
 
@@ -94,7 +105,10 @@ public sealed class RequestLoggingTests : IDisposable
     [Fact]
     public async Task Unmatched_endpoints_log_a_warning_naming_the_request()
     {
-        await _client.GetAsync("/qbit/api/v2/sync/maindata", TestContext.Current.CancellationToken);
+        await _client.GetAsync(
+            "/qbittorrent/qbit/api/v2/sync/maindata",
+            TestContext.Current.CancellationToken
+        );
 
         var warning = Assert.Single(
             _logs.Events,
@@ -103,14 +117,14 @@ public sealed class RequestLoggingTests : IDisposable
                 && logEvent.Message == "No proxied endpoint matches request"
         );
         Assert.Equal("Proxyarr.Requests", warning.Category);
-        Assert.Equal("/qbit/api/v2/sync/maindata", warning.Fields["Path"]);
+        Assert.Equal("/qbittorrent/qbit/api/v2/sync/maindata", warning.Fields["Path"]);
     }
 
     [Fact]
     public async Task Guard_rejections_log_a_warning()
     {
         await _client.GetAsync(
-            "/sab/api?mode=shutdown&apikey=secret",
+            "/sabnzbd/sab/api?mode=shutdown&apikey=secret",
             TestContext.Current.CancellationToken
         );
 
@@ -127,8 +141,11 @@ public sealed class RequestLoggingTests : IDisposable
     public async Task Concurrent_requests_keep_their_scopes_isolated()
     {
         await Task.WhenAll(
-            _client.GetAsync("/qbit/api/v2/app/version", TestContext.Current.CancellationToken),
-            _client.GetAsync("/sab/api?mode=version", TestContext.Current.CancellationToken)
+            _client.GetAsync(
+                "/qbittorrent/qbit/api/v2/app/version",
+                TestContext.Current.CancellationToken
+            ),
+            _client.GetAsync("/sabnzbd/sab/api?mode=version", TestContext.Current.CancellationToken)
         );
 
         var completions = _logs.Events.Where(logEvent => logEvent.Message == "Request proxied");
@@ -136,13 +153,13 @@ public sealed class RequestLoggingTests : IDisposable
             completions,
             logEvent =>
                 Equals(logEvent.Fields["Instance"], "qbit")
-                && Equals(logEvent.Fields["Path"], "/qbit/api/v2/app/version")
+                && Equals(logEvent.Fields["Path"], "/qbittorrent/qbit/api/v2/app/version")
         );
         Assert.Contains(
             completions,
             logEvent =>
                 Equals(logEvent.Fields["Instance"], "sab")
-                && Equals(logEvent.Fields["Path"], "/sab/api")
+                && Equals(logEvent.Fields["Path"], "/sabnzbd/sab/api")
         );
     }
 }

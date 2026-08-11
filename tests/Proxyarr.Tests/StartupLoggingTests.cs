@@ -14,9 +14,13 @@ public sealed class StartupLoggingTests
         using var factory = new ProxyAppFactory(
             """
             clients:
-              - name: qbit
-                type: qbittorrent
-                upstream: http://localhost:8080
+              qbittorrent:
+                upstreams:
+                  - name: main
+                    url: http://localhost:8080
+                instances:
+                  - name: qbit
+                    upstream: main
             """,
             logs
         );

@@ -7,8 +7,8 @@ public static class RequestLogScope
     /// <summary>Adds request metadata to every log emitted while the request is executing.</summary>
     public static WebApplication UseRequestLogScope(this WebApplication app, ProxyConfig config)
     {
-        var instances = config.Clients.ToDictionary(
-            instance => instance.Name,
+        var instances = config.ResolvedClients.ToDictionary(
+            instance => $"/{instance.Type}/{instance.Name}",
             instance => instance.Name,
             StringComparer.OrdinalIgnoreCase
         );
@@ -47,8 +47,14 @@ public static class RequestLogScope
             return null;
         }
 
-        var separator = value.IndexOf('/', 1);
-        var segment = value[1..(separator < 0 ? value.Length : separator)];
-        return instances.TryGetValue(segment, out var instance) ? instance : null;
+        var typeSeparator = value.IndexOf('/', 1);
+        if (typeSeparator < 0)
+        {
+            return null;
+        }
+
+        var nameSeparator = value.IndexOf('/', typeSeparator + 1);
+        var routeBase = value[..(nameSeparator < 0 ? value.Length : nameSeparator)];
+        return instances.TryGetValue(routeBase, out var instance) ? instance : null;
     }
 }

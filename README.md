@@ -15,14 +15,14 @@ client download each release only once.
 
 ## How it works
 
-Every client instance in the config is served under `/<name>`. In Radarr, point the download
-client at this proxy's host/port and set the client's **URL Base** to `/<name>`:
+Every client instance in the config is served under `/<type>/<name>`. In Radarr, point the download
+client at this proxy's host/port and set the client's **URL Base** to that path:
 
 ```text
-Radarr ──▶ http://proxy:8484/qbittorrent/api/v2/torrents/info
-                             └────┬────┘└──────────┬─────────┘
-                            instance name      forwarded to
-                                          http://qbit-host:8080/api/v2/torrents/info
+Radarr ──▶ http://proxy:8484/qbittorrent/radarr/api/v2/torrents/info
+                             └────┬────┘└──┬──┘└──────────┬─────────┘
+                             client type  name         forwarded to
+                                               http://qbit-host:8080/api/v2/torrents/info
 ```
 
 Each client type has an *adapter* that declares an explicit allow-list of endpoints
@@ -73,18 +73,32 @@ logging:
   overrides: {} # per-category levels, e.g. "Microsoft.AspNetCore: information"
 
 clients:
-  - name: qbittorrent # served at /qbittorrent, use as Radarr's URL Base
-    type: qbittorrent
-    upstream: http://localhost:8080
+  qbittorrent:
+    upstreams:
+      - name: main
+        url: http://localhost:8080
+    instances:
+      - name: radarr # served at /qbittorrent/radarr
+        upstream: main
 
-  - name: sabnzbd
-    type: sabnzbd
-    upstream: http://localhost:8085/sabnzbd # include SABnzbd's URL base
+  sabnzbd:
+    upstreams:
+      - name: main
+        url: http://localhost:8085/sabnzbd # include SABnzbd's URL base
+    instances:
+      - name: radarr # served at /sabnzbd/radarr
+        upstream: main
 ```
 
-Unknown keys, bad levels, duplicate names, and malformed upstreams fail at startup with a
-message naming the problem. Multiple instances of the same type are fine (`qbit-movies`,
-`qbit-4k`, ...).
+Each client type has three named sections:
+
+- `upstreams` defines reusable connections to real download clients.
+- `groups` defines dedupe boundaries and the real upstream category for each boundary.
+- `instances` defines the URL Base names and references an upstream plus, optionally, a group.
+
+Referencing a group enables dedupe; omitting `group` makes an instance a pass-through. Names are
+unique within their section and client type, so `radarr` can be used under both `qbittorrent` and
+`sabnzbd`. Unknown keys, invalid references, duplicate names, and malformed URLs fail at startup.
 
 ## Cross-instance deduplication
 
@@ -92,45 +106,61 @@ Several Radarr/Sonarr instances often share one qBittorrent and one SABnzbd. Whe
 grab the same release, qBittorrent's one-category-per-torrent model means whichever adds first
 "owns" the torrent and the other's download vanishes, and SABnzbd downloads the same NZB twice.
 
-Turn on `dedupe` per instance and proxyarr makes those instances **share one download**. It is
-opt-in: without a `dedupe` block an instance is a byte-identical pass-through exactly as before.
+Assign instances to a named group and proxyarr makes those instances **share one download**.
+Deduplication is opt-in: an instance without `group` is a byte-identical pass-through.
 
 ```yaml
 database: /config/proxyarr.db # optional; defaults to proxyarr.db next to the config
 
 clients:
-  - name: radarr-qbit # point several *arrs at the SAME qBittorrent, one prefix each
-    type: qbittorrent
-    upstream: http://qbit:8080
-    dedupe:
-      enabled: true
-      category: proxyarr # real category set upstream; omit to add with no category
-      # group: main       # optional override; only for one client on two hostnames
-  - name: sonarr-qbit
-    type: qbittorrent
-    upstream: http://qbit:8080
-    dedupe:
-      enabled: true
-      category: proxyarr # every member of a group must agree on this
+  qbittorrent:
+    upstreams:
+      - name: main
+        url: http://qbit:8080
+    groups:
+      - name: radarr
+        category: radarr
+      - name: sonarr
+        category: sonarr
+    instances:
+      - name: radarr
+        upstream: main
+        group: radarr
+      - name: radarr4k
+        upstream: main
+        group: radarr
+      - name: sonarr
+        upstream: main
+        group: sonarr
+      - name: sonarr4k
+        upstream: main
+        group: sonarr
 
-  - name: radarr-sab
-    type: sabnzbd
-    upstream: http://sab:8080
-    dedupe:
-      enabled: true
-      category: proxyarr
-      announce_categories: [movies, tv] # sabnzbd only (see below)
+  sabnzbd:
+    upstreams:
+      - name: main
+        url: http://sab:8080
+    groups:
+      - name: radarr
+        category: radarr
+        announce_categories: [movies, movies-4k]
+    instances:
+      - name: radarr
+        upstream: main
+        group: radarr
+      - name: radarr4k
+        upstream: main
+        group: radarr
 ```
 
-**Grouping.** Dedupe-enabled instances of the same type that share a normalized upstream URL form
-a *group*, derived automatically — nothing about the *arr instances is configured here. Ownership
-of a shared download is tracked by the **proxyarr instance name** (`radarr-qbit`, `sonarr-qbit`,
-...). The optional `dedupe.group` key is only needed for the exotic case of one client reachable
-via two hostnames.
+**Grouping.** Instances that reference the same named group share downloads. Different named
+groups are separate dedupe boundaries, even when they reference the same upstream. Ownership of a
+shared download is tracked by the **proxyarr instance name** (`radarr`, `radarr4k`, ...). The
+group's `category` is the real category assigned upstream; omit it to add without a category.
 
 **qBittorrent — categories become tags.** A torrent can hold many tags but only one category, so
-each instance's ownership is a tag named after it. The real category assigned upstream is
-`dedupe.category` (or none if unset); the category each *arr sends is echoed back to it but never
+each instance's ownership is a tag named after it. The real category assigned upstream is the
+group's `category` (or none if unset); the category each *arr sends is echoed back to it but never
 forwarded. Requests are translated on the fly: `torrents/info?category=X` filters by the
 instance's tag and reports `X` back; `add` tags the torrent instead of fighting over its category;
 `delete` removes only that instance's tag. qBittorrent itself is the state store — no database is
@@ -154,8 +184,8 @@ and only forwards the real delete (honoring `del_files`) once the **last** claim
 
 > **First-run category check (SABnzbd).** On a fresh SABnzbd, Radarr's "does my category exist?"
 > check runs before anything has been added. List the categories your *arrs use under
-> `announce_categories` so proxyarr reports them as existing; categories are otherwise learned from
-> the claims that already exist.
+> the group's `announce_categories` so proxyarr reports them as existing; categories are otherwise
+> learned from the claims that already exist.
 
 ### Known edges (accepted)
 
@@ -175,7 +205,7 @@ and only forwards the real delete (honoring `del_files`) once the **last** claim
 Both formats emit one event per line with identical snake_case fields; `logfmt` is the default:
 
 ```text
-ts=2026-07-09T06:03:48.824Z level=info msg="Request proxied" logger=Proxyarr.Forwarding.UpstreamForwarder instance=qbittorrent method=GET path=/qbittorrent/api/v2/torrents/info query="" status_code=200 elapsed_ms=3.1
+ts=2026-07-09T06:03:48.824Z level=info msg="Request proxied" logger=Proxyarr.Forwarding.UpstreamForwarder instance=radarr method=GET path=/qbittorrent/radarr/api/v2/torrents/info query="" status_code=200 elapsed_ms=3.1
 ```
 
 Every proxied request logs its outcome and duration at `information`; upstream failures log at

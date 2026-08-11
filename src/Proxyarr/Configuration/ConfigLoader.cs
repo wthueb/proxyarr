@@ -1,5 +1,4 @@
 using System.Text.RegularExpressions;
-using Proxyarr.Dedupe;
 using YamlDotNet.Core;
 using YamlDotNet.Serialization;
 using YamlDotNet.Serialization.NamingConventions;
@@ -12,9 +11,6 @@ namespace Proxyarr.Configuration;
 /// </summary>
 public static partial class ConfigLoader
 {
-    /// <summary>Route prefixes that would collide with the proxy's own endpoints.</summary>
-    private static readonly string[] ReservedNames = ["healthz"];
-
     private static readonly IDeserializer Deserializer = new DeserializerBuilder()
         .WithNamingConvention(UnderscoredNamingConvention.Instance)
         .Build();
@@ -80,112 +76,168 @@ public static partial class ConfigLoader
         _ = config.Logging.ParsedLevel;
         foreach (var _ in config.Logging.ParsedOverrides) { }
 
-        var seenNames = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
-
-        foreach (var client in config.Clients)
+        if (config.Clients is null)
         {
-            if (client is null)
-            {
-                throw new ConfigurationException("clients contains an empty entry.");
-            }
-
-            if (!InstanceNameRegex().IsMatch(client.Name))
-            {
-                throw new ConfigurationException(
-                    $"Client name '{client.Name}' is invalid. Names are used as URL prefixes and "
-                        + "must be lowercase alphanumeric with optional inner hyphens (e.g. 'qbittorrent', 'sab-4k')."
-                );
-            }
-
-            if (ReservedNames.Contains(client.Name))
-            {
-                throw new ConfigurationException($"Client name '{client.Name}' is reserved.");
-            }
-
-            if (!seenNames.Add(client.Name))
-            {
-                throw new ConfigurationException($"Duplicate client name '{client.Name}'.");
-            }
-
-            if (string.IsNullOrWhiteSpace(client.Type))
-            {
-                throw new ConfigurationException($"Client '{client.Name}' is missing a type.");
-            }
-
-            if (
-                !Uri.TryCreate(client.Upstream, UriKind.Absolute, out var upstream)
-                || (upstream.Scheme != Uri.UriSchemeHttp && upstream.Scheme != Uri.UriSchemeHttps)
-            )
-            {
-                throw new ConfigurationException(
-                    $"Client '{client.Name}' has invalid upstream '{client.Upstream}'. "
-                        + "Expected an absolute http(s) URL, e.g. 'http://localhost:8080'."
-                );
-            }
-
-            // A trailing slash would produce '//' when the endpoint path is appended.
-            client.Upstream = client.Upstream.TrimEnd('/');
-
-            ValidateDedupe(client);
+            throw new ConfigurationException("clients must be a mapping.");
         }
 
-        ValidateDedupeGroups(config);
+        if (config.Clients.Qbittorrent is null || config.Clients.Sabnzbd is null)
+        {
+            throw new ConfigurationException(
+                "clients.qbittorrent and clients.sabnzbd must be mappings when declared."
+            );
+        }
+
+        config.ResolvedClients =
+        [
+            .. ResolveClientType("qbittorrent", config.Clients.Qbittorrent),
+            .. ResolveClientType("sabnzbd", config.Clients.Sabnzbd),
+        ];
     }
 
-    private static void ValidateDedupe(ClientInstanceConfig client)
+    private static IReadOnlyList<ClientInstanceConfig> ResolveClientType(
+        string type,
+        ClientTypeConfig clientType
+    )
     {
-        if (client.Dedupe is not { } dedupe)
-        {
-            return;
-        }
-
-        var hasSubKeys =
-            dedupe.Category is not null
-            || dedupe.Group is not null
-            || dedupe.AnnounceCategories is { Count: > 0 };
-
-        if (!dedupe.Enabled)
-        {
-            if (hasSubKeys)
-            {
-                throw new ConfigurationException(
-                    $"Client '{client.Name}' sets dedupe options but dedupe.enabled is not true. "
-                        + "Set 'enabled: true' or remove the dedupe block."
-                );
-            }
-
-            return;
-        }
-
         if (
-            dedupe.AnnounceCategories is { Count: > 0 }
-            && !client.Type.Equals("sabnzbd", StringComparison.OrdinalIgnoreCase)
+            clientType.Upstreams is null
+            || clientType.Groups is null
+            || clientType.Instances is null
         )
         {
             throw new ConfigurationException(
-                $"Client '{client.Name}': dedupe.announce_categories is only valid for sabnzbd clients."
+                $"clients.{type} upstreams, groups, and instances must be lists when declared."
             );
         }
-    }
 
-    /// <summary>All dedupe-enabled members of a group must agree on the real upstream category.</summary>
-    private static void ValidateDedupeGroups(ProxyConfig config)
-    {
-        foreach (var group in DedupeGroups.Build(config).All)
+        var upstreams = new Dictionary<string, ClientUpstreamConfig>(
+            StringComparer.OrdinalIgnoreCase
+        );
+        foreach (var upstream in clientType.Upstreams)
         {
-            var categories = group
-                .Members.Select(member => member.Dedupe!.Category)
-                .Distinct()
-                .ToList();
-
-            if (categories.Count > 1)
+            if (upstream is null)
             {
                 throw new ConfigurationException(
-                    $"Dedupe group members [{string.Join(", ", group.Members.Select(m => m.Name))}] "
-                        + "disagree on dedupe.category; all members of a group must declare the same category."
+                    $"clients.{type}.upstreams contains an empty entry."
+                );
+            }
+
+            ValidateName(type, "upstream", upstream.Name);
+            if (!upstreams.TryAdd(upstream.Name, upstream))
+            {
+                throw new ConfigurationException(
+                    $"Duplicate clients.{type} upstream name '{upstream.Name}'."
+                );
+            }
+
+            if (
+                !Uri.TryCreate(upstream.Url, UriKind.Absolute, out var uri)
+                || (uri.Scheme != Uri.UriSchemeHttp && uri.Scheme != Uri.UriSchemeHttps)
+            )
+            {
+                throw new ConfigurationException(
+                    $"clients.{type} upstream '{upstream.Name}' has invalid URL "
+                        + $"'{upstream.Url}'. Expected an absolute http(s) URL."
+                );
+            }
+
+            upstream.Url = upstream.Url.TrimEnd('/');
+        }
+
+        var groups = new Dictionary<string, ClientGroupConfig>(StringComparer.OrdinalIgnoreCase);
+        foreach (var group in clientType.Groups)
+        {
+            if (group is null)
+            {
+                throw new ConfigurationException($"clients.{type}.groups contains an empty entry.");
+            }
+
+            ValidateName(type, "group", group.Name);
+            if (!groups.TryAdd(group.Name, group))
+            {
+                throw new ConfigurationException(
+                    $"Duplicate clients.{type} group name '{group.Name}'."
+                );
+            }
+
+            if (group.AnnounceCategories is { Count: > 0 } && type != "sabnzbd")
+            {
+                throw new ConfigurationException(
+                    $"clients.{type} group '{group.Name}': announce_categories is only "
+                        + "valid for sabnzbd groups."
                 );
             }
         }
+
+        var seenInstances = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        var resolved = new List<ClientInstanceConfig>(clientType.Instances.Count);
+        foreach (var instance in clientType.Instances)
+        {
+            if (instance is null)
+            {
+                throw new ConfigurationException(
+                    $"clients.{type}.instances contains an empty entry."
+                );
+            }
+
+            ValidateName(type, "instance", instance.Name);
+            if (!seenInstances.Add(instance.Name))
+            {
+                throw new ConfigurationException(
+                    $"Duplicate clients.{type} instance name '{instance.Name}'."
+                );
+            }
+
+            if (!upstreams.TryGetValue(instance.Upstream, out var upstream))
+            {
+                throw new ConfigurationException(
+                    $"clients.{type} instance '{instance.Name}' references unknown "
+                        + $"upstream '{instance.Upstream}'."
+                );
+            }
+
+            ClientGroupConfig? group = null;
+            if (instance.Group is not null && !groups.TryGetValue(instance.Group, out group))
+            {
+                throw new ConfigurationException(
+                    $"clients.{type} instance '{instance.Name}' references unknown group "
+                        + $"'{instance.Group}'."
+                );
+            }
+
+            resolved.Add(
+                new ClientInstanceConfig
+                {
+                    Name = instance.Name,
+                    Type = type,
+                    Upstream = upstream.Url,
+                    Dedupe = group is null
+                        ? null
+                        : new DedupeConfig
+                        {
+                            Group = group.Name,
+                            Category = group.Category,
+                            AnnounceCategories = group.AnnounceCategories,
+                        },
+                }
+            );
+        }
+
+        return resolved;
+    }
+
+    private static void ValidateName(string type, string kind, string name)
+    {
+        if (InstanceNameRegex().IsMatch(name))
+        {
+            return;
+        }
+
+        throw new ConfigurationException(
+            $"clients.{type} {kind} name '{name}' is invalid. Names must be lowercase "
+                + "alphanumeric with optional inner hyphens (e.g. 'main', 'radarr-4k')."
+        );
     }
 
     [GeneratedRegex("^[a-z0-9]([a-z0-9-]*[a-z0-9])?$")]

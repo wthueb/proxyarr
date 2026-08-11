@@ -23,9 +23,13 @@ public sealed class QBittorrentIntegrationTests
         _factory = new ProxyAppFactory(
             $"""
             clients:
-              - name: qbit
-                type: qbittorrent
-                upstream: {qbittorrent.UpstreamUrl}
+              qbittorrent:
+                upstreams:
+                  - name: main
+                    url: {qbittorrent.UpstreamUrl}
+                instances:
+                  - name: qbit
+                    upstream: main
             """
         );
         _client = _factory.CreateClient();
@@ -43,7 +47,7 @@ public sealed class QBittorrentIntegrationTests
     public async Task Login_succeeds_through_the_proxy()
     {
         var response = await Client.PostAsync(
-            "/qbit/api/v2/auth/login",
+            "/qbittorrent/qbit/api/v2/auth/login",
             new FormUrlEncodedContent(
                 new Dictionary<string, string> { ["username"] = "admin", ["password"] = "any" }
             ),
@@ -62,11 +66,11 @@ public sealed class QBittorrentIntegrationTests
     public async Task Reports_the_supported_api_and_app_versions()
     {
         var apiVersion = await Client.GetStringAsync(
-            "/qbit/api/v2/app/webapiVersion",
+            "/qbittorrent/qbit/api/v2/app/webapiVersion",
             TestContext.Current.CancellationToken
         );
         var appVersion = await Client.GetStringAsync(
-            "/qbit/api/v2/app/version",
+            "/qbittorrent/qbit/api/v2/app/version",
             TestContext.Current.CancellationToken
         );
 
@@ -80,7 +84,7 @@ public sealed class QBittorrentIntegrationTests
     public async Task Preferences_are_returned_as_json()
     {
         var json = await Client.GetStringAsync(
-            "/qbit/api/v2/app/preferences",
+            "/qbittorrent/qbit/api/v2/app/preferences",
             TestContext.Current.CancellationToken
         );
 
@@ -96,7 +100,7 @@ public sealed class QBittorrentIntegrationTests
 
         // Radarr creates its category up front.
         var createCategory = await Client.PostAsync(
-            "/qbit/api/v2/torrents/createCategory",
+            "/qbittorrent/qbit/api/v2/torrents/createCategory",
             Form(("category", category)),
             ct
         );
@@ -105,7 +109,10 @@ public sealed class QBittorrentIntegrationTests
             $"createCategory returned {(int)createCategory.StatusCode}"
         );
 
-        var categories = await Client.GetStringAsync("/qbit/api/v2/torrents/categories", ct);
+        var categories = await Client.GetStringAsync(
+            "/qbittorrent/qbit/api/v2/torrents/categories",
+            ct
+        );
         Assert.Contains(category, categories);
 
         // Add a stopped torrent, the same way Radarr uploads a .torrent file.
@@ -118,7 +125,7 @@ public sealed class QBittorrentIntegrationTests
         addForm.Add(new StringContent("true"), "stopped");
         addForm.Add(new StringContent("true"), "paused");
 
-        var add = await Client.PostAsync("/qbit/api/v2/torrents/add", addForm, ct);
+        var add = await Client.PostAsync("/qbittorrent/qbit/api/v2/torrents/add", addForm, ct);
         Assert.Equal(HttpStatusCode.OK, add.StatusCode);
         // Web API 2.15 returns {"added_torrent_ids": [...]}; older versions returned "Ok.".
         // The poll below is the real success check either way.
@@ -127,7 +134,7 @@ public sealed class QBittorrentIntegrationTests
         await WaitForTorrentAsync(infoHash, expectPresent: true, ct);
 
         var properties = await Client.GetStringAsync(
-            $"/qbit/api/v2/torrents/properties?hash={infoHash}",
+            $"/qbittorrent/qbit/api/v2/torrents/properties?hash={infoHash}",
             ct
         );
         using (var propertiesJson = JsonDocument.Parse(properties))
@@ -135,7 +142,10 @@ public sealed class QBittorrentIntegrationTests
             Assert.True(propertiesJson.RootElement.TryGetProperty("save_path", out _));
         }
 
-        var files = await Client.GetStringAsync($"/qbit/api/v2/torrents/files?hash={infoHash}", ct);
+        var files = await Client.GetStringAsync(
+            $"/qbittorrent/qbit/api/v2/torrents/files?hash={infoHash}",
+            ct
+        );
         using (var filesJson = JsonDocument.Parse(files))
         {
             Assert.Single(filesJson.RootElement.EnumerateArray());
@@ -144,7 +154,7 @@ public sealed class QBittorrentIntegrationTests
         // Web API 2.15 requires all four parameters (shareLimitAction -1 = "default"); a
         // Radarr-style call omitting them gets a 400, which the proxy passes through as-is.
         var setShareLimits = await Client.PostAsync(
-            "/qbit/api/v2/torrents/setShareLimits",
+            "/qbittorrent/qbit/api/v2/torrents/setShareLimits",
             Form(
                 ("hashes", infoHash),
                 ("ratioLimit", "1.5"),
@@ -157,7 +167,7 @@ public sealed class QBittorrentIntegrationTests
         Assert.Equal(HttpStatusCode.OK, setShareLimits.StatusCode);
 
         var setForceStart = await Client.PostAsync(
-            "/qbit/api/v2/torrents/setForceStart",
+            "/qbittorrent/qbit/api/v2/torrents/setForceStart",
             Form(("hashes", infoHash), ("value", "false")),
             ct
         );
@@ -166,7 +176,7 @@ public sealed class QBittorrentIntegrationTests
         // 409 is expected when torrent queueing is disabled (the qBittorrent default); Radarr
         // treats both outcomes as success.
         var topPrio = await Client.PostAsync(
-            "/qbit/api/v2/torrents/topPrio",
+            "/qbittorrent/qbit/api/v2/torrents/topPrio",
             Form(("hashes", infoHash)),
             ct
         );
@@ -176,14 +186,14 @@ public sealed class QBittorrentIntegrationTests
         );
 
         var setCategory = await Client.PostAsync(
-            "/qbit/api/v2/torrents/setCategory",
+            "/qbittorrent/qbit/api/v2/torrents/setCategory",
             Form(("hashes", infoHash), ("category", category)),
             ct
         );
         Assert.Equal(HttpStatusCode.OK, setCategory.StatusCode);
 
         var delete = await Client.PostAsync(
-            "/qbit/api/v2/torrents/delete",
+            "/qbittorrent/qbit/api/v2/torrents/delete",
             Form(("hashes", infoHash), ("deleteFiles", "true")),
             ct
         );
@@ -201,7 +211,7 @@ public sealed class QBittorrentIntegrationTests
         var deadline = DateTime.UtcNow + TimeSpan.FromSeconds(60);
         while (DateTime.UtcNow < deadline)
         {
-            var json = await Client.GetStringAsync("/qbit/api/v2/torrents/info", ct);
+            var json = await Client.GetStringAsync("/qbittorrent/qbit/api/v2/torrents/info", ct);
             using var torrents = JsonDocument.Parse(json);
             var present = torrents
                 .RootElement.EnumerateArray()

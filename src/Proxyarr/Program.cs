@@ -63,7 +63,7 @@ app.Logger.LogInformation("Proxyarr started", ("Version", version));
 app.Logger.LogInformation(
     "Configuration loaded",
     ("ConfigPath", Path.GetFullPath(configPath)),
-    ("ClientCount", config.Clients.Count),
+    ("ClientCount", config.ResolvedClients.Count),
     ("LogFormat", config.Logging.UsesJson ? "json" : "logfmt"),
     ("LogLevel", LogFields.LevelToken(config.Logging.ParsedLevel))
 );
