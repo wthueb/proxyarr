@@ -21,22 +21,38 @@
 
       perSystem =
         { pkgs, ... }:
+        let
+          dotnet-sdk = pkgs.dotnetCorePackages.sdk_10_0;
+        in
         {
-          devShells.default =
-            let
-              sdk = pkgs.dotnetCorePackages.sdk_10_0;
-            in
-            pkgs.mkShell {
-              packages = [ sdk ];
+          devShells.default = pkgs.mkShell {
+            packages = [ dotnet-sdk ];
 
-              env.DOTNET_ROOT = "${sdk}/share/dotnet";
-            };
+            env.DOTNET_ROOT = "${dotnet-sdk}/share/dotnet";
+          };
 
           treefmt = {
             projectRootFile = "flake.nix";
 
-            programs.nixfmt.enable = true;
-            programs.csharpier.enable = true;
+            settings.formatter.dotnet-format = {
+              command = "${dotnet-sdk}/bin/dotnet";
+              options = [
+                "format"
+                "--no-restore"
+                "--include"
+              ];
+              includes = [
+                "*.cs"
+                "*.sln"
+                "*.csproj"
+              ];
+            };
+
+            programs = {
+              actionlint.enable = true;
+              csharpier.enable = true;
+              nixfmt.enable = true;
+            };
           };
         };
     };
