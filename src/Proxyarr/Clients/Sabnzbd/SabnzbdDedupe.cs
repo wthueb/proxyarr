@@ -210,6 +210,17 @@ public sealed class SabnzbdDedupe(
     )
     {
         var mode = context.Request.Query["mode"].ToString();
+        if (mode is "queue" or "history")
+        {
+            // *arr scopes listings with its configured category, which differs from the shared
+            // category used upstream. Fetch without SABnzbd's category filter and let the response
+            // transform below apply the authoritative per-instance claims. This also works when
+            // SABnzbd normalizes an unconfigured group category to its default category.
+            var uri = new UriBuilder(proxyRequest.RequestUri!);
+            uri.Query = BuildForwardQuery(context.Request.Query, ("category", null));
+            proxyRequest.RequestUri = uri.Uri;
+        }
+
         if (
             mode is "queue" or "history" or "get_config" or "retry"
             || (mode == "fullstatus" && SabnzbdPathRewriter.Enabled(instance))
@@ -284,21 +295,45 @@ public sealed class SabnzbdDedupe(
             ct
         );
 
-        foreach (var slot in slots.OfType<JsonObject>())
+        // SABnzbd has only one category per job, so the shared upstream category cannot isolate
+        // group members. Claims are the source of truth: expose only jobs owned by this instance.
+        for (var index = slots.Count - 1; index >= 0; index--)
         {
+            if (slots[index] is not JsonObject slot)
+            {
+                slots.RemoveAt(index);
+                continue;
+            }
+
             if (
                 slot["nzo_id"]?.GetValue<string>() is { } id
                 && claimed.TryGetValue(id, out var category)
             )
             {
                 slot[categoryField] = category;
+                continue;
             }
+
+            slots.RemoveAt(index);
         }
+
+        RewriteSlotCount(listing, slots.Count);
 
         pathRewriter.RewriteListing(root, container, instance);
 
         await store.ReconcileAsync(group.Key, nzoIds, PruneGrace, ct);
         return await ResponseBody.ReplaceAsync(context, root.ToJsonString(), "application/json");
+    }
+
+    private static void RewriteSlotCount(JsonObject listing, int count)
+    {
+        if (listing["noofslots"] is not JsonValue current)
+        {
+            return;
+        }
+
+        // SABnzbd versions have emitted this field as both a JSON number and a numeric string.
+        listing["noofslots"] = current.TryGetValue<string>(out _) ? count.ToString() : count;
     }
 
     private async ValueTask<bool> InjectCategoriesAsync(

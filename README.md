@@ -238,7 +238,9 @@ any explicit value).
 SQLite database (`database:`, WAL-mode, migrated on startup). The same release from different
 indexers dedupes because the content key is a hash of the NZB's segment message-IDs. A duplicate
 `addfile` adds a claim and returns the existing `nzo_id`; a `delete` removes that instance's claim
-and only forwards the real delete (honoring `del_files`) once the **last** claim is gone.
+and only forwards the real delete (honoring `del_files`) once the **last** claim is gone. Queue and
+history requests remove the instance-specific upstream category filter, then filter the result to
+that instance's claims and echo its original category back.
 
 > **First-run category check (SABnzbd).** On a fresh SABnzbd, Radarr's "does my category exist?"
 > check runs before anything has been added. List the categories your *arrs use under

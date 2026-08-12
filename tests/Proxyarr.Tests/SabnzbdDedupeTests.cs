@@ -103,19 +103,48 @@ public sealed class SabnzbdDedupeTests : IDisposable
     }
 
     [Fact]
-    public async Task Queue_listing_rewrites_the_category_for_claimed_slots_only()
+    public async Task Queue_listing_rewrites_claimed_slots_and_hides_them_from_non_owners()
     {
         StubAddfile("nzo-1");
-        StubQueueSlots("""{"queue":{"slots":[{"nzo_id":"nzo-1","cat":"proxyarr"}]}}""");
+        StubQueueSlots(
+            """{"queue":{"noofslots":1,"slots":[{"nzo_id":"nzo-1","cat":"proxyarr"}]}}"""
+        );
 
         // sab1 grabs it under category "movies"; sab2 never claims it.
         await AddNzb("sab1", Nzb("q@seg"), "movies");
 
         var forSab1 = await GetJson("sab1", "mode=queue&apikey=k");
         Assert.Equal("movies", SlotCat(forSab1, "queue", "nzo-1"));
+        Assert.Equal(
+            1,
+            forSab1.RootElement.GetProperty("queue").GetProperty("noofslots").GetInt32()
+        );
 
         var forSab2 = await GetJson("sab2", "mode=queue&apikey=k");
-        Assert.Equal("proxyarr", SlotCat(forSab2, "queue", "nzo-1")); // untouched for the non-owner
+        Assert.Empty(
+            forSab2.RootElement.GetProperty("queue").GetProperty("slots").EnumerateArray()
+        );
+        Assert.Equal(
+            0,
+            forSab2.RootElement.GetProperty("queue").GetProperty("noofslots").GetInt32()
+        );
+    }
+
+    [Fact]
+    public async Task Queue_and_history_remove_the_instance_category_before_forwarding()
+    {
+        StubQueueSlots("""{"queue":{"slots":[]}}""");
+        _upstream
+            .Given(Request.Create().WithPath("/api").WithParam("mode", "history").UsingGet())
+            .RespondWith(Json("""{"history":{"slots":[]}}"""));
+
+        await GetJson("sab1", "mode=queue&category=movies&apikey=k");
+        await GetJson("sab1", "mode=history&category=movies&apikey=k");
+
+        Assert.All(
+            Requests("queue").Concat(Requests("history")),
+            entry => Assert.False(entry.RequestMessage!.Query!.ContainsKey("category"))
+        );
     }
 
     [Fact]
