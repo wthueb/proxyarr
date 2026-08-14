@@ -1,6 +1,8 @@
 FROM mcr.microsoft.com/dotnet/sdk:10.0 AS build
 WORKDIR /source
 
+ARG MINVERVERSIONOVERRIDE
+
 COPY Proxyarr.slnx Directory.Build.props Directory.Packages.props global.json ./
 COPY src/Proxyarr/Proxyarr.csproj src/Proxyarr/
 COPY tests/Proxyarr.Tests/Proxyarr.Tests.csproj tests/Proxyarr.Tests/
@@ -9,7 +11,7 @@ RUN dotnet restore
 
 COPY src/ src/
 COPY tests/ tests/
-RUN dotnet build -c Release --no-restore
+RUN dotnet build -c Release --no-restore "-p:MinVerVersionOverride=$MINVERVERSIONOVERRIDE"
 
 FROM build AS test
 RUN dotnet test tests/Proxyarr.Tests -c Release --no-build

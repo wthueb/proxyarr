@@ -83,6 +83,8 @@ jobs:
     if: needs.route.outputs.run == 'true'
     needs: route
     runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.minver.outputs.version }}
 
     steps:
       - name: Checkout
@@ -100,6 +102,12 @@ jobs:
 
       - name: Restore dependencies
         run: dotnet restore
+
+      - name: Determine version
+        id: minver
+        run: |
+          version="$(dotnet msbuild src/Proxyarr/Proxyarr.csproj -target:MinVer -getProperty:MinVerVersion)"
+          echo "version=$version" >> "$GITHUB_OUTPUT"
 
       - name: Formatting check
         run: nix fmt -- --ci
@@ -123,6 +131,7 @@ jobs:
       runner: ubuntu-24.04
       publish: ${{ needs.route.outputs.publish == 'true' }}
       export_e2e: true
+      version: ${{ needs.dotnet.outputs.version }}
     secrets:
       DOCKERHUB_TOKEN: ${{ secrets.DOCKERHUB_TOKEN }}
 
@@ -142,6 +151,7 @@ jobs:
       runner: ubuntu-24.04-arm
       publish: ${{ needs.route.outputs.publish == 'true' }}
       export_e2e: false
+      version: ${{ needs.dotnet.outputs.version }}
     secrets:
       DOCKERHUB_TOKEN: ${{ secrets.DOCKERHUB_TOKEN }}
 

@@ -7,14 +7,7 @@
   "packages": {
     ".": {
       "package-name": "proxyarr",
-      "changelog-path": "CHANGELOG.md",
-      "extra-files": [
-        {
-          "type": "xml",
-          "path": "Directory.Build.props",
-          "xpath": "//Project/PropertyGroup/Version"
-        }
-      ]
+      "changelog-path": "CHANGELOG.md"
     }
   }
 }
