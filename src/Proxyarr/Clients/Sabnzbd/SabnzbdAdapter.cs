@@ -5,8 +5,8 @@ namespace Proxyarr.Clients.Sabnzbd;
 /// <summary>
 /// SABnzbd API as shipped in SABnzbd 5.0.4. SABnzbd exposes a single <c>/api</c> endpoint
 /// dispatched on the <c>mode</c> query parameter, so the allow-list here is a set of modes rather
-/// than paths. The modes mirror exactly what Radarr's client uses, see
-/// src/NzbDrone.Core/Download/Clients/Sabnzbd/SabnzbdProxy.cs in Radarr.
+/// than paths. The modes mirror what Radarr 6.4.4.10685 and Sonarr 4.0.20.3014 use, see
+/// src/NzbDrone.Core/Download/Clients/Sabnzbd/SabnzbdProxy.cs in each project.
 /// </summary>
 public sealed class SabnzbdAdapter(SabnzbdDedupe dedupe, SabnzbdPathRewriter pathRewriter)
     : IDownloadClientAdapter

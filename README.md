@@ -6,12 +6,17 @@ untouched, to a configured qBittorrent or SABnzbd instance. Optionally, it can
 [deduplicate downloads](#cross-instance-deduplication) so several \*arr instances sharing one
 client download each release only once.
 
-**Supported upstream versions**
+**Supported versions**
 
-| Client      | Version | API                        |
-| ----------- | ------- | -------------------------- |
-| qBittorrent | 5.2.3   | Web API v2 (2.15.x)        |
-| SABnzbd     | 5.0.4   | `/api` with `mode=` params |
+| Component   | Version      | API                        |
+| ----------- | ------------ | -------------------------- |
+| Radarr      | 6.4.4.10685  | qBittorrent and SABnzbd    |
+| Sonarr      | 4.0.20.3014  | qBittorrent and SABnzbd    |
+| qBittorrent | 5.2.3        | Web API v2 (2.15.x)        |
+| SABnzbd     | 5.0.4        | `/api` with `mode=` params |
+
+qBittorrent username/password and API-key authentication are supported in both pass-through and
+cross-instance deduplication modes.
 
 ## How it works
 
@@ -35,7 +40,8 @@ unless deduplication or an upstream `path_mappings` entry explicitly transforms 
 
 ### Proxied endpoints
 
-qBittorrent (mirrors Radarr's `QBittorrentProxyV2`):
+qBittorrent (mirrors Radarr 6.4.4.10685 and Sonarr 4.0.20.3014
+`QBittorrentProxyV2`):
 
 | Method | Endpoint                          |
 | ------ | --------------------------------- |
@@ -55,8 +61,9 @@ qBittorrent (mirrors Radarr's `QBittorrentProxyV2`):
 | POST   | `/api/v2/torrents/topPrio`        |
 | POST   | `/api/v2/torrents/setForceStart`  |
 
-SABnzbd — `GET|POST /api` with these `mode` values (mirrors Radarr's `SabnzbdProxy`):
-`addfile`, `version`, `get_config`, `fullstatus`, `queue`, `history`, `retry`.
+SABnzbd — `GET|POST /api` with these `mode` values (mirrors Radarr 6.4.4.10685 and
+Sonarr 4.0.20.3014 `SabnzbdProxy`): `addfile`, `version`, `get_config`, `fullstatus`, `queue`,
+`history`, `retry`.
 
 ## Configuration
 

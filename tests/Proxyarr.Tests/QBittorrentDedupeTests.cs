@@ -511,7 +511,38 @@ public sealed class QBittorrentDedupeTests : IDisposable
         Assert.Contains("imported", Single(AddTagsPath));
     }
 
-    // ---- error propagation ----------------------------------------------------------------------
+    // ---- authentication and error propagation ---------------------------------------------------
+
+    [Fact]
+    public async Task Bearer_auth_is_forwarded_to_side_calls()
+    {
+        var client = Boot();
+        StubInfo(TorrentArray("h1", tags: "radarr1,radarr2"));
+        StubPost(RemoveTagsPath);
+
+        using var request = new HttpRequestMessage(
+            HttpMethod.Post,
+            "/qbittorrent/radarr1/api/v2/torrents/delete"
+        )
+        {
+            Content = Form(("hashes", "h1")),
+        };
+        request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", "api-key");
+
+        var response = await client.SendAsync(request, Ct);
+
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        var sideCalls = Entries(InfoPath).Concat(Entries(RemoveTagsPath)).ToList();
+        Assert.Equal(2, sideCalls.Count);
+        Assert.All(
+            sideCalls,
+            entry =>
+                Assert.Equal(
+                    "Bearer api-key",
+                    entry.RequestMessage!.Headers!["Authorization"].Single()
+                )
+        );
+    }
 
     [Fact]
     public async Task Side_call_403_propagates_so_radarr_relogins()

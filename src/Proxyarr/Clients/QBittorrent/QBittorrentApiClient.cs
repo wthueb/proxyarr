@@ -36,12 +36,17 @@ public sealed record TorrentInfo(
 }
 
 /// <summary>
-/// Makes qBittorrent Web API v2 side-calls on behalf of an in-flight proxied request, reusing that
-/// request's <c>SID</c> cookie verbatim (the proxy stores no credentials). Created per request by
+/// Makes qBittorrent Web API v2 side-calls on behalf of an in-flight proxied request, reusing its
+/// authentication headers verbatim (the proxy stores no credentials). Created per request by
 /// <see cref="QBittorrentApiClientFactory"/>. The underlying <see cref="HttpClient"/> must have its
 /// cookie jar disabled or the manual <c>Cookie</c> header is swallowed.
 /// </summary>
-public sealed class QBittorrentApiClient(HttpClient http, string upstream, string? cookie)
+public sealed class QBittorrentApiClient(
+    HttpClient http,
+    string upstream,
+    string? cookie,
+    string? authorization
+)
 {
     /// <summary>Name of the DI-registered side-call <see cref="HttpClient"/> (cookie jar disabled).</summary>
     public const string HttpClientName = "qbittorrent-sidecall";
@@ -234,6 +239,11 @@ public sealed class QBittorrentApiClient(HttpClient http, string upstream, strin
             request.Headers.TryAddWithoutValidation("Cookie", cookie);
         }
 
+        if (!string.IsNullOrEmpty(authorization))
+        {
+            request.Headers.TryAddWithoutValidation("Authorization", authorization);
+        }
+
         try
         {
             var response = await http.SendAsync(request, cancellationToken);
@@ -316,13 +326,14 @@ public sealed class QBittorrentApiClient(HttpClient http, string upstream, strin
     }
 }
 
-/// <summary>Builds a <see cref="QBittorrentApiClient"/> for one request, wiring in its SID cookie.</summary>
+/// <summary>Builds a <see cref="QBittorrentApiClient"/> with the request's authentication.</summary>
 public sealed class QBittorrentApiClientFactory(IHttpClientFactory httpClientFactory)
 {
     public QBittorrentApiClient Create(ClientInstanceConfig instance, HttpRequest request)
     {
         var http = httpClientFactory.CreateClient(QBittorrentApiClient.HttpClientName);
         var cookie = request.Headers.Cookie.ToString();
-        return new QBittorrentApiClient(http, instance.Upstream, cookie);
+        var authorization = request.Headers.Authorization.ToString();
+        return new QBittorrentApiClient(http, instance.Upstream, cookie, authorization);
     }
 }

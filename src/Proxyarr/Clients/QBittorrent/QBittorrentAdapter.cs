@@ -7,9 +7,9 @@ namespace Proxyarr.Clients.QBittorrent;
 /// supported; the v1 API (qBittorrent &lt; 4.1) is not proxied, and neither are the pre-5.0
 /// endpoint names (torrents/pause, torrents/resume).
 ///
-/// The route list mirrors exactly what Radarr's client uses, see
-/// src/NzbDrone.Core/Download/Clients/QBittorrent/QBittorrentProxyV2.cs in Radarr. Instances with
-/// dedupe enabled get category→tag hooks on top of the same endpoint surface.
+/// The route list mirrors what Radarr 6.4.4.10685 and Sonarr 4.0.20.3014 use, see
+/// src/NzbDrone.Core/Download/Clients/QBittorrent/QBittorrentProxyV2.cs in each project. Instances
+/// with dedupe enabled get category→tag hooks on top of the same endpoint surface.
 /// </summary>
 public sealed class QBittorrentAdapter(
     QBittorrentDedupe dedupe,

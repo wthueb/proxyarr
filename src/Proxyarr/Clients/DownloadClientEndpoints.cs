@@ -29,8 +29,8 @@ public static class DownloadClientEndpoints
         );
         services.AddSingleton<KeyedAsyncLock>();
 
-        // qBittorrent dedup side-calls reuse the incoming SID cookie, so the client's own cookie jar
-        // must be disabled or it swallows the manually attached Cookie header.
+        // qBittorrent dedup side-calls reuse incoming authentication, including the SID cookie, so
+        // the client's own cookie jar must not swallow the manually attached Cookie header.
         services
             .AddHttpClient(QBittorrentApiClient.HttpClientName)
             .ConfigurePrimaryHttpMessageHandler(() =>

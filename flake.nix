@@ -25,7 +25,7 @@
           dotnet-sdk = pkgs.dotnetCorePackages.sdk_10_0;
         in
         {
-          devShells.default = pkgs.mkShell {
+          devShells.default = pkgs.mkShellNoCC {
             packages = [ dotnet-sdk ];
 
             env.DOTNET_ROOT = "${dotnet-sdk}/share/dotnet";
