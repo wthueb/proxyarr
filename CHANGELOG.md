@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.0.1](https://github.com/wthueb/proxyarr/compare/v1.0.0...v1.0.1) (2026-09-19)
+
+
+### Bug Fixes
+
+* support latest sonarr/radarr ([4cca0db](https://github.com/wthueb/proxyarr/commit/4cca0db00c34792e83f51d2e1708020bb94ea82c))
+
 ## 1.0.0 (2026-08-14)
 
 
