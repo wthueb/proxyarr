@@ -6,7 +6,7 @@ using Proxyarr.IntegrationTests.Support;
 namespace Proxyarr.IntegrationTests;
 
 /// <summary>
-/// Exercises SABnzbd cross-instance dedup against a real SABnzbd 5.0.4 container. Two dedupe
+/// Exercises SABnzbd cross-instance dedup against a real SABnzbd 5.1.3 container. Two dedupe
 /// instances (sab1/sab2, category <c>proxyarr-it</c>) share the container; each test uses a unique
 /// NZB so its content key and nzo_id never collide with another test's.
 /// </summary>

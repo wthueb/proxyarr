@@ -4,18 +4,32 @@ using System.Text;
 namespace Proxyarr.IntegrationTests.Support;
 
 /// <summary>
-/// Builds a minimal, syntactically valid single-file .torrent (BitTorrent v1). The piece hash is
+/// Builds a minimal, syntactically valid .torrent (BitTorrent v1). The piece hash is
 /// random, so the data can never be downloaded — qBittorrent only needs well-formed metadata, and
 /// each call produces a unique info hash so tests never collide.
 /// </summary>
 public static class TestTorrent
 {
-    public static (byte[] Bytes, string InfoHashHex) Create(string name)
+    public static (byte[] Bytes, string InfoHashHex) Create(string name, bool multiFile = false)
     {
         using var info = new MemoryStream();
         WriteRaw(info, "d");
-        WriteString(info, "length");
-        WriteRaw(info, "i1024e");
+        if (multiFile)
+        {
+            WriteString(info, "files");
+            WriteRaw(info, "ld");
+            WriteString(info, "length");
+            WriteRaw(info, "i1024e");
+            WriteString(info, "path");
+            WriteRaw(info, "l");
+            WriteString(info, "test.bin");
+            WriteRaw(info, "eee");
+        }
+        else
+        {
+            WriteString(info, "length");
+            WriteRaw(info, "i1024e");
+        }
         WriteString(info, "name");
         WriteString(info, name);
         WriteString(info, "piece length");

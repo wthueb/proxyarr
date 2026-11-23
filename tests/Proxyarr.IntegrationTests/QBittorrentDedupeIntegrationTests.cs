@@ -6,7 +6,7 @@ using Proxyarr.IntegrationTests.Support;
 namespace Proxyarr.IntegrationTests;
 
 /// <summary>
-/// Exercises qBittorrent cross-instance dedup against a real qBittorrent 5.2.3 container. Two dedup
+/// Exercises qBittorrent cross-instance dedup against a real qBittorrent 5.2.4 container. Two dedup
 /// groups share the one container: <c>main</c> (radarr1/radarr2, category <c>proxyarr-it</c>) and
 /// <c>nocat</c> (sonarr1/sonarr2, no category), separated by explicit group overrides.
 /// </summary>

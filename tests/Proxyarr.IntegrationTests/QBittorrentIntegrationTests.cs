@@ -6,7 +6,7 @@ using Proxyarr.IntegrationTests.Support;
 namespace Proxyarr.IntegrationTests;
 
 /// <summary>
-/// Exercises every proxied qBittorrent endpoint against a real qBittorrent 5.2.3 container,
+/// Exercises every proxied qBittorrent endpoint against a real qBittorrent 5.2.4 container,
 /// mirroring the call patterns of Radarr's download client.
 /// </summary>
 public sealed class QBittorrentIntegrationTests
@@ -77,10 +77,8 @@ public sealed class QBittorrentIntegrationTests
             TestContext.Current.CancellationToken
         );
 
-        // qBittorrent 5.2.3 ships Web API 2.15.x; Radarr uses this value to pick its code paths
-        // (>= 2.11.0 selects the stop/start naming introduced by qBittorrent 5.0).
-        Assert.StartsWith("2.15", apiVersion);
-        Assert.StartsWith("v5.2.3", appVersion);
+        Assert.Equal("2.15.1", apiVersion);
+        Assert.Equal("v5.2.4", appVersion);
     }
 
     [Fact]
@@ -120,7 +118,10 @@ public sealed class QBittorrentIntegrationTests
         Assert.Contains(category, categories);
 
         // Add a stopped torrent, the same way Radarr uploads a .torrent file.
-        var (torrentBytes, infoHash) = TestTorrent.Create($"proxyarr-{Guid.NewGuid():N}");
+        var (torrentBytes, infoHash) = TestTorrent.Create(
+            $"proxyarr-{Guid.NewGuid():N}",
+            multiFile: true
+        );
         var torrentContent = new ByteArrayContent(torrentBytes);
         torrentContent.Headers.ContentType = new MediaTypeHeaderValue("application/x-bittorrent");
         using var addForm = new MultipartFormDataContent();
@@ -136,6 +137,23 @@ public sealed class QBittorrentIntegrationTests
         Assert.NotEqual("Fails.", await add.Content.ReadAsStringAsync(ct));
 
         await WaitForTorrentAsync(infoHash, expectPresent: true, ct);
+
+        var info = await Client.GetStringAsync(
+            $"/qbittorrent/qbit/api/v2/torrents/info?hashes={infoHash}",
+            ct
+        );
+        using (var infoJson = JsonDocument.Parse(info))
+        {
+            var torrent = Assert.Single(infoJson.RootElement.EnumerateArray());
+            Assert.StartsWith(
+                "/proxyarr/qbit-config/",
+                torrent.GetProperty("root_path").GetString()
+            );
+            Assert.StartsWith(
+                "/proxyarr/qbit-config/",
+                torrent.GetProperty("content_path").GetString()
+            );
+        }
 
         var properties = await Client.GetStringAsync(
             $"/qbittorrent/qbit/api/v2/torrents/properties?hash={infoHash}",

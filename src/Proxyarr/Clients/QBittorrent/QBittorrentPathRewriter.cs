@@ -53,6 +53,7 @@ public sealed class QBittorrentPathRewriter
         foreach (var torrent in torrents.OfType<JsonObject>())
         {
             changed |= RewriteProperty(torrent, "content_path", instance);
+            changed |= RewriteProperty(torrent, "root_path", instance);
             changed |= RewriteProperty(torrent, "save_path", instance);
         }
 

@@ -318,7 +318,7 @@ public sealed class QBittorrentDedupeTests : IDisposable
             .Given(Request.Create().WithPath(InfoPath).UsingGet())
             .RespondWith(
                 Json(
-                    """[{"hash":"abc","tags":"radarr1","category":"proxyarr","content_path":"/downloads/Movie","save_path":"/downloads"}]"""
+                    """[{"hash":"abc","tags":"radarr1","category":"proxyarr","content_path":"/downloads/Movie","root_path":"/downloads/Movie","save_path":"/downloads"}]"""
                 )
             );
 
@@ -330,6 +330,7 @@ public sealed class QBittorrentDedupeTests : IDisposable
         var torrent = json.RootElement.EnumerateArray().Single();
         Assert.Equal("movies", torrent.GetProperty("category").GetString());
         Assert.Equal("/proxyarr/qbit/Movie", torrent.GetProperty("content_path").GetString());
+        Assert.Equal("/proxyarr/qbit/Movie", torrent.GetProperty("root_path").GetString());
         Assert.Equal("/proxyarr/qbit", torrent.GetProperty("save_path").GetString());
     }
 

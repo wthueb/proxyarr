@@ -4,10 +4,10 @@ using DotNet.Testcontainers.Containers;
 
 namespace Proxyarr.IntegrationTests.Support;
 
-/// <summary>Runs a real qBittorrent 5.2.3 in Docker, shared by all tests in a class.</summary>
+/// <summary>Runs a real qBittorrent 5.2.4 in Docker, shared by all tests in a class.</summary>
 public sealed class QBittorrentContainerFixture : IAsyncLifetime
 {
-    public const string Image = "linuxserver/qbittorrent:5.2.3";
+    public const string Image = "linuxserver/qbittorrent:5.2.4";
 
     // Auth is bypassed for all source subnets so tests don't depend on the random password the
     // container generates on first start; logging in through the proxy still succeeds.

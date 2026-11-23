@@ -60,7 +60,7 @@ public sealed class PathMappingProxyTests : IDisposable
         Stub("/api/v2/app/preferences", """{"save_path":"/downloads"}""");
         Stub(
             "/api/v2/torrents/info",
-            """[{"content_path":"/downloads/special/Movie","save_path":"/downloads","name":"Movie"},{"content_path":"/downloads-other/Keep","save_path":"/downloads-other"}]"""
+            """[{"content_path":"/downloads/special/Movie","root_path":"/downloads/special/Movie","save_path":"/downloads","name":"Movie"},{"content_path":"/downloads-other/Keep","root_path":"/downloads-other/Keep","save_path":"/downloads-other"}]"""
         );
         Stub("/api/v2/torrents/properties", """{"save_path":"/downloads/Movie"}""");
         Stub(
@@ -80,8 +80,13 @@ public sealed class PathMappingProxyTests : IDisposable
             "/proxyarr/qbit-special/Movie",
             torrents[0].GetProperty("content_path").GetString()
         );
+        Assert.Equal(
+            "/proxyarr/qbit-special/Movie",
+            torrents[0].GetProperty("root_path").GetString()
+        );
         Assert.Equal("/proxyarr/qbit", torrents[0].GetProperty("save_path").GetString());
         Assert.Equal("/downloads-other/Keep", torrents[1].GetProperty("content_path").GetString());
+        Assert.Equal("/downloads-other/Keep", torrents[1].GetProperty("root_path").GetString());
 
         using var properties = await GetJson(
             "/qbittorrent/mapped/api/v2/torrents/properties?hash=abc"
@@ -96,6 +101,26 @@ public sealed class PathMappingProxyTests : IDisposable
             "/proxyarr/qbit/movies",
             categories.RootElement.GetProperty("movies").GetProperty("savePath").GetString()
         );
+    }
+
+    [Theory]
+    [InlineData("{}", "{}")]
+    [InlineData("{\"root_path\":null}", "{\"root_path\":null}")]
+    [InlineData("{\"root_path\":\"\"}", "{\"root_path\":\"\"}")]
+    [InlineData(
+        "{\"root_path\":\"/downloads/Movie\"}",
+        "{\"root_path\":\"/proxyarr/qbit/Movie\"}"
+    )]
+    public async Task Qbittorrent_handles_root_path_without_other_path_fields(
+        string torrent,
+        string expected
+    )
+    {
+        Stub("/api/v2/torrents/info", $"[{torrent}]");
+
+        using var info = await GetJson("/qbittorrent/mapped/api/v2/torrents/info");
+
+        Assert.Equal(expected, info.RootElement.EnumerateArray().Single().GetRawText());
     }
 
     [Fact]

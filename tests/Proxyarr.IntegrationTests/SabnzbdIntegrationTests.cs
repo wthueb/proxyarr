@@ -6,7 +6,7 @@ using Proxyarr.IntegrationTests.Support;
 namespace Proxyarr.IntegrationTests;
 
 /// <summary>
-/// Exercises every proxied SABnzbd API mode against a real SABnzbd 5.0.4 container, mirroring
+/// Exercises every proxied SABnzbd API mode against a real SABnzbd 5.1.3 container, mirroring
 /// the call patterns of Radarr's download client.
 /// </summary>
 public sealed class SabnzbdIntegrationTests : IClassFixture<SabnzbdContainerFixture>, IDisposable
@@ -62,7 +62,7 @@ public sealed class SabnzbdIntegrationTests : IClassFixture<SabnzbdContainerFixt
     {
         using var version = await GetJsonAsync("mode=version");
 
-        Assert.Equal("5.0.4", version.RootElement.GetProperty("version").GetString());
+        Assert.Equal("5.1.3", version.RootElement.GetProperty("version").GetString());
     }
 
     [Fact]

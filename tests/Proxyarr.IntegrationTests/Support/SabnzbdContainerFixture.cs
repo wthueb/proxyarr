@@ -4,10 +4,10 @@ using DotNet.Testcontainers.Containers;
 
 namespace Proxyarr.IntegrationTests.Support;
 
-/// <summary>Runs a real SABnzbd 5.0.4 in Docker, shared by all tests in a class.</summary>
+/// <summary>Runs a real SABnzbd 5.1.3 in Docker, shared by all tests in a class.</summary>
 public sealed class SabnzbdContainerFixture : IAsyncLifetime
 {
-    public const string Image = "linuxserver/sabnzbd:5.0.4";
+    public const string Image = "linuxserver/sabnzbd:5.1.3";
 
     public const string ApiKey = "proxyarrintegrationapikey0001";
 

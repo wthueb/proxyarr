@@ -10,10 +10,10 @@ client download each release only once.
 
 | Component   | Version      | API                        |
 | ----------- | ------------ | -------------------------- |
-| Radarr      | 6.4.4.10685  | qBittorrent and SABnzbd    |
+| Radarr      | 7.0.3.10918  | qBittorrent and SABnzbd    |
 | Sonarr      | 4.0.20.3014  | qBittorrent and SABnzbd    |
-| qBittorrent | 5.2.3        | Web API v2 (2.15.x)        |
-| SABnzbd     | 5.0.4        | `/api` with `mode=` params |
+| qBittorrent | 5.2.4        | Web API v2 (2.15.1)        |
+| SABnzbd     | 5.1.3        | `/api` with `mode=` params |
 
 qBittorrent username/password and API-key authentication are supported in both pass-through and
 cross-instance deduplication modes.
@@ -40,7 +40,7 @@ unless deduplication or an upstream `path_mappings` entry explicitly transforms 
 
 ### Proxied endpoints
 
-qBittorrent (mirrors Radarr 6.4.4.10685 and Sonarr 4.0.20.3014
+qBittorrent (mirrors Radarr 7.0.3.10918 and Sonarr 4.0.20.3014
 `QBittorrentProxyV2`):
 
 | Method | Endpoint                          |
@@ -61,7 +61,7 @@ qBittorrent (mirrors Radarr 6.4.4.10685 and Sonarr 4.0.20.3014
 | POST   | `/api/v2/torrents/topPrio`        |
 | POST   | `/api/v2/torrents/setForceStart`  |
 
-SABnzbd — `GET|POST /api` with these `mode` values (mirrors Radarr 6.4.4.10685 and
+SABnzbd — `GET|POST /api` with these `mode` values (mirrors Radarr 7.0.3.10918 and
 Sonarr 4.0.20.3014 `SabnzbdProxy`): `addfile`, `version`, `get_config`, `fullstatus`, `queue`,
 `history`, `retry`.
 
@@ -296,7 +296,7 @@ docker build -t proxyarr .
 docker run -v ./config/config.yml:/config/config.yml:ro -p 8484:8484 proxyarr
 ```
 
-`compose.yaml` starts the proxy alongside real qBittorrent 5.2.3 and SABnzbd 5.0.4 containers as
+`compose.yaml` starts the proxy alongside real qBittorrent 5.2.4 and SABnzbd 5.1.3 containers as
 a development harness: `docker compose up --build`.
 
 ## Testing
@@ -308,7 +308,7 @@ Tests are a core component; run everything with `dotnet test`.
   (paths, queries, cookies, multipart bodies, error propagation), the endpoint allow-lists,
   config validation, and log output/redaction.
 - **`tests/Proxyarr.IntegrationTests`** — full integration tests. Testcontainers starts
-  the real `linuxserver/qbittorrent:5.2.3` / `linuxserver/sabnzbd:5.0.4` images and drives every
+  the real `linuxserver/qbittorrent:5.2.4` / `linuxserver/sabnzbd:5.1.3` images and drives every
   proxied endpoint through the proxy the way Radarr does (login, upload a torrent, add an NZB,
   query, remove, ...). Skipped automatically when Docker isn't available, or explicitly with
   `PROXYARR_SKIP_INTEGRATION=1`.
