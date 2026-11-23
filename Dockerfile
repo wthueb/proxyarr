@@ -1,4 +1,4 @@
-FROM mcr.microsoft.com/dotnet/sdk:10.0 AS build
+FROM mcr.microsoft.com/dotnet/sdk:11.0 AS build
 WORKDIR /source
 
 ARG MINVERVERSIONOVERRIDE
@@ -14,12 +14,12 @@ COPY tests/ tests/
 RUN dotnet build -c Release --no-restore "-p:MinVerVersionOverride=$MINVERVERSIONOVERRIDE"
 
 FROM build AS test
-RUN dotnet test tests/Proxyarr.Tests -c Release --no-build
+RUN dotnet test --project tests/Proxyarr.Tests -c Release --no-build
 
 FROM build AS publish
 RUN dotnet publish src/Proxyarr -c Release --no-build -o /app
 
-FROM mcr.microsoft.com/dotnet/aspnet:10.0-alpine AS runtime
+FROM mcr.microsoft.com/dotnet/aspnet:11.0-alpine AS runtime
 WORKDIR /app
 COPY --from=publish /app .
 

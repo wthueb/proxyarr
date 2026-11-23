@@ -8,6 +8,9 @@ client download each release only once.
 
 **Supported versions**
 
+Compatibility is tested against the following versions of each component, as they're the versions I
+use. Other versions may work, but they are not tested against by me.
+
 | Component   | Version      | API                        |
 | ----------- | ------------ | -------------------------- |
 | Radarr      | 7.0.3.10918  | qBittorrent and SABnzbd    |
@@ -301,7 +304,9 @@ a development harness: `docker compose up --build`.
 
 ## Testing
 
-Tests are a core component; run everything with `dotnet test`.
+Tests require the .NET 11 SDK and use Microsoft.Testing.Platform; run everything with
+`dotnet test`. To select a suite, use `dotnet test --project tests/Proxyarr.Tests` or
+`dotnet test --project tests/Proxyarr.IntegrationTests`.
 
 - **`tests/Proxyarr.Tests`** — no real services needed. Boots the proxy in-process
   (`WebApplicationFactory`) against a WireMock fake upstream and verifies pass-through behavior

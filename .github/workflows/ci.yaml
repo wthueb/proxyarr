@@ -93,7 +93,7 @@ jobs:
           fetch-depth: 0
 
       - name: Install .NET
-        uses: actions/setup-dotnet@v5
+        uses: actions/setup-dotnet@v6
         with:
           global-json-file: global.json
 
@@ -113,7 +113,7 @@ jobs:
         run: nix fmt -- --ci
 
       - name: Run tests
-        run: dotnet test tests/Proxyarr.Tests --configuration Release --no-restore
+        run: dotnet test --project tests/Proxyarr.Tests --configuration Release --no-restore
 
   build_amd64_image:
     name: Build proxyarr (amd64)
@@ -179,7 +179,7 @@ jobs:
           fetch-depth: 0
 
       - name: Install .NET
-        uses: actions/setup-dotnet@v5
+        uses: actions/setup-dotnet@v6
         with:
           global-json-file: global.json
 
@@ -226,7 +226,7 @@ jobs:
         run: docker load --input "${RUNNER_TEMP}/images/proxyarr.tar"
 
       - name: Run integration tests
-        run: dotnet test tests/Proxyarr.IntegrationTests --configuration Release --no-restore
+        run: dotnet test --project tests/Proxyarr.IntegrationTests --configuration Release --no-restore
 
       - name: Test image
         shell: bash

@@ -41,7 +41,10 @@ public sealed class SabnzbdContainerFixture : IAsyncLifetime
         _container = new ContainerBuilder(Image)
             .WithPortBinding(8080, assignRandomHostPort: true)
             .WithEnvironment("TZ", "Etc/UTC")
-            .WithResourceMapping(Encoding.UTF8.GetBytes(SabnzbdIni), "/config/sabnzbd.ini")
+            .WithResourceMapping(
+                Encoding.UTF8.GetBytes(SabnzbdIni),
+                FilePath.Of("/config/sabnzbd.ini")
+            )
             .Build();
 
         await _container.StartAsync();

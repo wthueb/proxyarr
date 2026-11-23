@@ -22,7 +22,7 @@
       perSystem =
         { pkgs, ... }:
         let
-          dotnet-sdk = pkgs.dotnetCorePackages.sdk_10_0;
+          dotnet-sdk = pkgs.dotnetCorePackages.sdk_11_0;
         in
         {
           devShells.default = pkgs.mkShellNoCC {
@@ -35,7 +35,9 @@
             projectRootFile = "flake.nix";
 
             settings.formatter.dotnet-format = {
-              command = "${dotnet-sdk}/bin/dotnet";
+              command = pkgs.writeShellScriptBin "dotnet-format" ''
+                exec ${dotnet-sdk}/bin/dotnet "$@" </dev/null
+              '';
               options = [
                 "format"
                 "--no-restore"
@@ -50,7 +52,12 @@
 
             programs = {
               actionlint.enable = true;
-              csharpier.enable = true;
+              csharpier = {
+                enable = true;
+                package = pkgs.writeShellScriptBin "csharpier" ''
+                  exec ${pkgs.csharpier}/bin/csharpier "$@" </dev/null
+                '';
+              };
               nixfmt.enable = true;
             };
           };

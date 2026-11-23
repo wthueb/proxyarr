@@ -107,10 +107,7 @@ public sealed class PathMappingProxyTests : IDisposable
     [InlineData("{}", "{}")]
     [InlineData("{\"root_path\":null}", "{\"root_path\":null}")]
     [InlineData("{\"root_path\":\"\"}", "{\"root_path\":\"\"}")]
-    [InlineData(
-        "{\"root_path\":\"/downloads/Movie\"}",
-        "{\"root_path\":\"/proxyarr/qbit/Movie\"}"
-    )]
+    [InlineData("{\"root_path\":\"/downloads/Movie\"}", "{\"root_path\":\"/proxyarr/qbit/Movie\"}")]
     public async Task Qbittorrent_handles_root_path_without_other_path_fields(
         string torrent,
         string expected

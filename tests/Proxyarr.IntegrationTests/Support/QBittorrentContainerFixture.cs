@@ -42,7 +42,7 @@ public sealed class QBittorrentContainerFixture : IAsyncLifetime
             .WithEnvironment("TZ", "Etc/UTC")
             .WithResourceMapping(
                 Encoding.UTF8.GetBytes(QBittorrentConf),
-                "/config/qBittorrent/qBittorrent.conf"
+                FilePath.Of("/config/qBittorrent/qBittorrent.conf")
             )
             .WithWaitStrategy(
                 Wait.ForUnixContainer()
